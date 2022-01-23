@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class DBObjectManager<T extends DBObject> {
     private final Map<List<Serializable>, Long> lastChecked = new ConcurrentHashMap<>();
@@ -27,6 +28,7 @@ public class DBObjectManager<T extends DBObject> {
     private final Map<List<Serializable>, Boolean> loadingData = new ConcurrentHashMap<>();
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
+    private final Logger logger;
     private final Supplier<T> defaultGenerator;
     private final TableData table;
     private final long inactiveTime;
@@ -37,10 +39,11 @@ public class DBObjectManager<T extends DBObject> {
      * @param inactiveTime Time in seconds to remove inactive objects from the manager
      * @param type Type of the storage driver
      * @param defaultGenerator Supplier function that returns a sample object of the type T
-     * @param config Any config options needed by the selected database driver
+     * @param config Any config options needed by the selected storage driver type
      */
     public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Supplier<T> defaultGenerator, Object... config) {
         this.plugin = plugin;
+        this.logger = plugin.getLogger();
         if (inactiveTime == null) {
             this.inactiveTime = 5 * 60 * 1000;  // 5 minutes inactive
         }
@@ -68,10 +71,24 @@ public class DBObjectManager<T extends DBObject> {
 
         switch(type) {
             case JSON:
-                this.driver = new JSONDriver<>(plugin);
+                if (config.length < 1 || !(config[0] instanceof String)) {
+                    logger.log(Level.SEVERE, "JSON driver needs: <name of the storage folder>");
+                    throw new IllegalArgumentException("Wrong config parameters, check the console for further details");
+                }
+                this.driver = new JSONDriver<>(plugin, (String) config[0]);
                 break;
             case MYSQL:
             case MARIADB:
+                if (config.length < 6 ||
+                        !(config[0] instanceof String) ||
+                        !(config[1] instanceof Integer) ||
+                        !(config[2] instanceof String) ||
+                        !(config[3] instanceof String) ||
+                        !(config[4] instanceof String) ||
+                        !(config[5] instanceof String)) {
+                    logger.log(Level.SEVERE, "MySQL driver needs: <hostname> <port> <database> <username> <password> <table_prefix>");
+                    throw new IllegalArgumentException("Wrong config parameters, check the console for further details");
+                }
                 this.driver = new MariaDBDriver<>(plugin, defItem, (String) config[0], (int) config[1], (String) config[2], (String) config[3], (String) config[4], (String) config[5]);
                 break;
             default:
@@ -168,7 +185,7 @@ public class DBObjectManager<T extends DBObject> {
                         }
                     }
                     catch (Exception ex) {
-                        DBHandler.log(Level.WARNING, plugin.getName() + " couldn't load data from table " + table.getName());
+                        logger.log(Level.WARNING, "Couldn't load data from table " + table.getName());
                         ex.printStackTrace();
                         error.run();
                     }
@@ -195,7 +212,7 @@ public class DBObjectManager<T extends DBObject> {
                 }
             }
             else {
-                DBHandler.log(Level.WARNING, plugin.getName() + " exceeded maximum attempts while loading data from table " + table.getName());
+                logger.log(Level.WARNING, "Exceeded maximum attempts while loading data from table " + table.getName());
                 error.run();
             }
         }
@@ -215,7 +232,7 @@ public class DBObjectManager<T extends DBObject> {
             if (item == null) {
                 loadedData.remove(key);
                 lastChecked.remove(key);
-                DBHandler.log(Level.WARNING, "Data not loaded but marked as loaded! Please report this bug!");
+                logger.log(Level.WARNING, "Data not loaded but marked as loaded! Please report this bug!");
             }
             else {
                 items.add(item);
@@ -232,13 +249,13 @@ public class DBObjectManager<T extends DBObject> {
                             lastChecked.remove(result);
                         }
                         else {
-                            DBHandler.log(Level.SEVERE, plugin.getName() + " could not save an item on table " + table.getName() + "!");
+                            logger.log(Level.SEVERE, "Could not save an item on table " + table.getName() + "!");
                         }
                     }
                 }
             }
             catch (Exception ex) {
-                DBHandler.log(Level.SEVERE, plugin.getName() + " could not save data on table " + table.getName() + "!");
+                logger.log(Level.SEVERE, "Could not save data on table " + table.getName() + "!");
                 ex.printStackTrace();
             }
         });

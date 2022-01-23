@@ -1,6 +1,5 @@
 package com.clanjhoo.dbhandler.drivers;
 
-import com.clanjhoo.dbhandler.DBHandler;
 import com.clanjhoo.dbhandler.data.DBObject;
 import com.clanjhoo.dbhandler.data.TableData;
 import com.clanjhoo.dbhandler.utils.Pair;
@@ -15,16 +14,17 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     private final String host, database, username, password, prefix;
     private final int port;
-    private final JavaPlugin plugin;
+    private final Logger logger;
     private final T sample;
 
     public MariaDBDriver(JavaPlugin plugin, T sample, String host, int port, String database, String username, String password, String prefix) {
         new org.mariadb.jdbc.Driver();
-        this.plugin = plugin;
+        this.logger = plugin.getLogger();
         this.host = host;
         this.port = port;
         this.database = database;
@@ -46,7 +46,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             connection = openConnection(this.host, this.port, this.database, this.username, this.password);
         }
         catch (SQLException e) {
-            DBHandler.log(Level.INFO, plugin.getName() + ": Could NOT connect to MariaDB!");
+            logger.log(Level.INFO, "Could NOT connect to MariaDB!");
             e.printStackTrace();
             return null;
         }
@@ -55,12 +55,12 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             stmt.execute();
         }
         catch (SQLException e) {
-            DBHandler.log(Level.INFO, plugin.getName() + ": MySQL SELECT 1 failed. Reconnecting");
+            logger.log(Level.INFO, "MySQL SELECT 1 failed. Reconnecting");
             try {
                 connection = openConnection(this.host, this.port, this.database, this.username, this.password);
             }
             catch (SQLException e1) {
-                DBHandler.log(Level.WARNING, plugin.getName() + ": Couldn't reconnect to MySQL!");
+                logger.log(Level.WARNING, "Couldn't reconnect to MySQL!");
                 e1.printStackTrace();
                 return null;
             }
@@ -80,7 +80,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
 
             return ps;
         } catch (SQLException e) {
-            DBHandler.log(Level.WARNING, plugin.getName() + ": MySQL error");
+            logger.log(Level.WARNING, "MySQL error");
             e.printStackTrace();
         }
 
@@ -96,14 +96,14 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             if (e.getErrorCode() == 1060) {
                 return false;
             }
-            DBHandler.log(Level.WARNING, plugin.getName() + ": MySQL error");
+            logger.log(Level.WARNING, "MySQL error");
             e.printStackTrace();
         }
         finally {
             try {
                 connection.close();
             } catch (SQLException e) {
-                DBHandler.log(Level.WARNING, plugin.getName() + ": Error closing connection");
+                logger.log(Level.WARNING, "Error closing connection");
                 e.printStackTrace();
             }
         }
@@ -113,7 +113,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     private boolean execute(@Language("sql") final String query, final Object... vars) {
         Connection connection = getConnection();
         if (connection == null) {
-            DBHandler.log(Level.WARNING, plugin.getName() + " could not get the connection!");
+            logger.log(Level.WARNING, "Could not get the connection!");
             return false;
         }
 
@@ -133,14 +133,14 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             }
 
         } catch (Exception e) {
-            DBHandler.log(Level.WARNING, plugin.getName() + ": MySQL error");
+            logger.log(Level.WARNING, "MySQL error");
             e.printStackTrace();
         }
         finally {
             try {
                 connection.close();
             } catch (SQLException e) {
-                DBHandler.log(Level.WARNING, plugin.getName() + ": Error closing connection");
+                logger.log(Level.WARNING, "Error closing connection");
                 e.printStackTrace();
             }
         }
@@ -151,7 +151,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     private <E> E query(@Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) {
         Connection connection = getConnection();
         if (connection == null) {
-            DBHandler.log(Level.WARNING, plugin.getName() + " could not get the connection!");
+            logger.log(Level.WARNING, "Could not get the connection!");
             return null;
         }
 
@@ -188,7 +188,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
                     res = rs.getInt(1) == 1;
                 }
             } catch (SQLException e) {
-                DBHandler.log(Level.WARNING, plugin.getName() + ": MySQL error checking existance in " + prefix + table);
+                logger.log(Level.WARNING, "MySQL error checking existence in " + prefix + table);
                 e.printStackTrace();
             }
             return res;
@@ -225,7 +225,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
                     result = null;
                 }
             } catch (SQLException e) {
-                DBHandler.log(Level.WARNING, plugin.getName() + ": MySQL error getting data in " + prefix + table);
+                logger.log(Level.WARNING, "MySQL error getting data in " + prefix + table);
                 e.printStackTrace();
                 result = null;
                 exception[0] = e;
@@ -275,7 +275,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     public boolean saveData(@NotNull String table, @NotNull T item) {
         Connection connection = getConnection();
         if (connection == null) {
-            DBHandler.log(Level.WARNING, plugin.getName() + " could not get the connection!");
+            logger.log(Level.WARNING, "Could not get the connection!");
             return false;
         }
         return saveData(connection, table, item);
@@ -289,7 +289,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         }
         Connection connection = getConnection();
         if (connection == null) {
-            DBHandler.log(Level.WARNING, plugin.getName() + " could not get the connection!");
+            logger.log(Level.WARNING, "Could not get the connection!");
             return results;
         }
         String[] keyNames = items.get(0).getPrimaryKeyName();

@@ -1,5 +1,7 @@
-package com.clanjhoo.dbhandler.data;
+package com.clanjhoo.dbhandler.samples;
 
+import com.clanjhoo.dbhandler.data.DBObject;
+import com.clanjhoo.dbhandler.data.TableData;
 import com.clanjhoo.dbhandler.utils.Pair;
 import org.jetbrains.annotations.NotNull;
 

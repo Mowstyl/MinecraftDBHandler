@@ -14,21 +14,21 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.function.Supplier;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
     private final File storage;
-    private final JavaPlugin plugin;
+    private final Logger logger;
     // private static final Pattern jsonFile = Pattern.compile("(.*)\\.json");
     private static final Pattern filePattern = Pattern.compile("^(?!.{256,})(?!.*\\.\\..*)(?!(aux|clock\\$|con|nul|prn|com[1-9]|lpt[1-9])(?:\\$|\\.))[\\.\\w\\-$()+=\\[\\\\\\];#@~,&'][ \\.\\w\\-$()+=\\[\\\\\\];#@~,&']+[\\w\\-$()+=\\[\\\\\\];#@~,&']$");
 
 
-    public JSONDriver(JavaPlugin plugin) {
-        this.plugin = plugin;
-        File storageFolder = DBHandler.getStorageFolder();
-        storage = new File(storageFolder, plugin.getName());
+    public JSONDriver(JavaPlugin plugin, String storageFolderName) {
+        logger = plugin.getLogger();
+        storage = new File(plugin.getDataFolder(), storageFolderName);
         if (storage.mkdirs()) {
-            DBHandler.log(Level.FINE, "Created local storage folder for plugin " + plugin.getName());
+            logger.log(Level.FINE, "Created local storage folder for raw JSON data");
         }
     }
 
@@ -155,7 +155,7 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
             writer.write(serializedData);
             writer.flush();
         } catch (IOException e) {
-            DBHandler.log(Level.WARNING, plugin.getName() + ": JSON store data error on table " + table);
+            logger.log(Level.WARNING, "Raw JSON store data error on table " + table);
             e.printStackTrace();
             return false;
         }
