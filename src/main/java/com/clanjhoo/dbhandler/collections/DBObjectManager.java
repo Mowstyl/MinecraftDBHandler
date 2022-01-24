@@ -1,6 +1,5 @@
 package com.clanjhoo.dbhandler.collections;
 
-import com.clanjhoo.dbhandler.DBHandler;
 import com.clanjhoo.dbhandler.data.DBObject;
 import com.clanjhoo.dbhandler.drivers.StorageType;
 import com.clanjhoo.dbhandler.data.TableData;
@@ -17,7 +16,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,7 +28,7 @@ public class DBObjectManager<T extends DBObject> {
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
     private final Logger logger;
-    private final Supplier<T> defaultGenerator;
+    private final Function<Serializable[], T> defaultGenerator;
     private final TableData table;
     private final long inactiveTime;
 
@@ -38,10 +37,10 @@ public class DBObjectManager<T extends DBObject> {
      * @param plugin The plugin that has created the object
      * @param inactiveTime Time in seconds to remove inactive objects from the manager
      * @param type Type of the storage driver
-     * @param defaultGenerator Supplier function that returns a sample object of the type T
+     * @param defaultGenerator Function that receives the primary key and returns a sample object of the type T. Must admit null as input for dummy items
      * @param config Any config options needed by the selected storage driver type
      */
-    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Supplier<T> defaultGenerator, Object... config) {
+    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Function<Serializable[], T> defaultGenerator, Object... config) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         if (inactiveTime == null) {
@@ -54,9 +53,9 @@ public class DBObjectManager<T extends DBObject> {
             this.inactiveTime = inactiveTime * 1000;
         }
         this.defaultGenerator = defaultGenerator;
-        T defItem = defaultGenerator.get();
+        T defItem = defaultGenerator.apply(null);
         table = new TableData(defItem.getTableName());
-        for (String field : table.getFields()) {
+        for (String field : defItem.getFields()) {
             table.addField(field, defItem.getFieldType(field), defItem.isFieldNullable(field));
         }
         table.setPrimaryKeys(defItem.getPrimaryKeyName());
@@ -97,6 +96,7 @@ public class DBObjectManager<T extends DBObject> {
         if (this.driver == null) {
             throw new IllegalArgumentException("Unsupported storage type " + type);
         }
+        driver.createTable(table);
     }
 
     /**
@@ -176,7 +176,7 @@ public class DBObjectManager<T extends DBObject> {
                             data = driver.loadData(table.getName(), arrayKeys, defaultGenerator);
                         }
                         if (data == null) {
-                            data = defaultGenerator.get();
+                            data = defaultGenerator.apply(keys.toArray(new Serializable[0]));
                         }
                         itemData.put(keys, data);
                         loadedData.put(keys, true);
@@ -193,7 +193,11 @@ public class DBObjectManager<T extends DBObject> {
                         loadingData.put(keys, false);
                     }
                 });
-                return !mainThread;
+                if (mainThread && canRunLater) {
+                    Bukkit.getScheduler().runTaskLater(plugin,
+                            () -> getDataAsynchronous(keys, success, error, true, true, attempt + 1), 1);
+                }
+                return !mainThread || canRunLater;
             } else {
                 // already loaded
                 success.accept(itemData.get(keys));

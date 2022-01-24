@@ -1,12 +1,14 @@
 package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.utils.Pair;
+import org.bukkit.Bukkit;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Level;
 
 public class TableData {
     private static final Map<String, TableData> tableMap = new ConcurrentHashMap<>();
@@ -79,8 +81,8 @@ public class TableData {
     private Set<String> getFieldSet(String... rawFields) {
         Set<String> fields = ConcurrentHashMap.newKeySet();
         for (String field : rawFields) {
-            if (!data.containsKey(name)) {
-                throw new IllegalArgumentException("Field doesn't exist");
+            if (!data.containsKey(field)) {
+                throw new IllegalArgumentException("Field " + field + " does not exist");
             }
             fields.add(field);
         }

@@ -196,8 +196,8 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Supplier<T> defaultGenerator) throws IOException, SQLException {
-        T item = defaultGenerator.get();
+    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws IOException, SQLException {
+        T item = defaultGenerator.apply(ids);
         String[] pKeyNames = item.getPrimaryKeyName();
         if (ids.length != pKeyNames.length) {
             throw new IllegalArgumentException("You must specify a value for each primary key defined for the object");

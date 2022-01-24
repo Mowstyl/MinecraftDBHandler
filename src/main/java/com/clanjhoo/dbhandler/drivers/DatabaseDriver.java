@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public interface DatabaseDriver<T extends DBObject> {
@@ -30,7 +31,7 @@ public interface DatabaseDriver<T extends DBObject> {
      * @throws IllegalArgumentException if the specified table name or identifier could not be used
      * @throws NoSuchElementException if the specified table or identifier do not exist
      */
-    T loadData(@NotNull String table, @NotNull Serializable[] ids, Supplier<T> defaultGenerator) throws IOException, SQLException;
+    T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws IOException, SQLException;
 
     /**
      * @param table name of the table to create

@@ -12,6 +12,7 @@ import java.io.*;
 import java.lang.reflect.Type;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -62,7 +63,7 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Supplier<T> defaultGenerator) throws IOException, SQLException {
+    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws IOException, SQLException {
         if (!filePattern.matcher(table).matches()) {
             throw new IllegalArgumentException("Invalid table name");
         }
@@ -76,7 +77,7 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
         }
         File tableFolder = new File(storage, table);
         File dataFile = new File(tableFolder,  id + ".json");
-        T dbObject = defaultGenerator.get();
+        T dbObject = defaultGenerator.apply(ids);
         String[] pKeyNames = dbObject.getPrimaryKeyName();
         if (pKeyNames.length != ids.length) {
             throw new IllegalArgumentException("You must specify a value for each primary key defined for the object");
