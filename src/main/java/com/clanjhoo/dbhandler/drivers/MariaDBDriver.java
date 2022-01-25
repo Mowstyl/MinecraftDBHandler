@@ -284,13 +284,11 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
                     }
                 }
                 else {
-                    logger.log(Level.WARNING, "Data not found in " + prefix + table);
+                    // logger.log(Level.WARNING, "Data not found in " + prefix + table);
                     result = null;
                 }
             } catch (SQLException e) {
                 logger.log(Level.WARNING, "MySQL error getting data in " + prefix + table);
-                e.printStackTrace();
-                result = null;
                 exception[0] = e;
             }
             return result;

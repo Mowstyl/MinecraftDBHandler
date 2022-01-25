@@ -150,6 +150,16 @@ public class DBObjectManager<T extends DBObject> {
         return getDataAsynchronous(Arrays.asList(keys), success, error, false, true, 0);
     }
 
+
+    /**
+     * Return if the specified object is already stored in the database
+     * @param keys List of values the primary keys of the queried object has
+     * @return Whether the item exists or not
+     */
+    public boolean exists(@NotNull Serializable[] keys) {
+        return driver.contains(table.getName(), keys);
+    }
+
     /**
      * Try to get the specified data with the defined database driver and pass it to a consumer if found
      * @param keys List of values the primary keys of the queried object has
@@ -170,11 +180,8 @@ public class DBObjectManager<T extends DBObject> {
                 loadingData.put(keys, true);
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                     try {
-                        T data = null;
                         Serializable[] arrayKeys = keys.toArray(new Serializable[0]);
-                        if (driver.contains(table.getName(), arrayKeys)) {
-                            data = driver.loadData(table.getName(), arrayKeys, defaultGenerator);
-                        }
+                        T data = driver.loadData(table.getName(), arrayKeys, defaultGenerator);
                         if (data == null) {
                             data = defaultGenerator.apply(keys.toArray(new Serializable[0]));
                         }
