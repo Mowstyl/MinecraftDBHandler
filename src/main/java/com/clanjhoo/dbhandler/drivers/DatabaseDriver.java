@@ -21,7 +21,7 @@ public interface DatabaseDriver<T extends DBObject> {
      * @throws IllegalArgumentException if the specified table name could not be used
      * @throws NoSuchElementException if the specified table does not exist
      */
-    boolean contains(@NotNull String table, @NotNull Serializable[] ids);
+    boolean contains(@NotNull String table, @NotNull Serializable[] ids) throws IOException, SQLException;
 
     /**
      * @param table name of the table to query

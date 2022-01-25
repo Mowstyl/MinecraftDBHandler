@@ -7,7 +7,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
 import java.io.Serializable;
 import java.sql.*;
 import java.util.*;
@@ -112,7 +111,8 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         return null;
     }
 
-    private boolean execute(@NotNull Connection connection, @Language("sql") final String query, final Object... vars) {
+    private boolean execute(@NotNull Connection connection, @Language("sql") final String query, final Object... vars) throws SQLException {
+        SQLException ex;
         try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
             assert ps != null;
             ps.execute();
@@ -121,74 +121,61 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             if (e.getErrorCode() == 1060) {
                 return false;
             }
-            logger.log(Level.WARNING, "MySQL error");
-            e.printStackTrace();
+            ex = e;
         }
-        finally {
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                logger.log(Level.WARNING, "Error closing connection");
-                e.printStackTrace();
-            }
-        }
-        return false;
+        throw ex;
     }
 
-    private boolean execute(@Language("sql") final String query, final Object... vars) {
+    private boolean execute(@Language("sql") final String query, final Object... vars) throws SQLException {
         Connection connection = getConnection();
         if (connection == null) {
             logger.log(Level.WARNING, "Could not get the connection!");
             return false;
         }
 
-        return execute(connection, query, vars);
-    }
-
-    private <E> E query(@NotNull Connection connection, @Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) {
-        E result = null;
+        boolean result = execute(connection, query, vars);
 
         try {
-            try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
-                assert ps != null;
-
-                try (ResultSet rs = ps.executeQuery()) {
-                    result = function.apply(rs);
-                }
-            }
-
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "MySQL error");
+            connection.close();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error closing connection");
             e.printStackTrace();
         }
-        finally {
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                logger.log(Level.WARNING, "Error closing connection");
-                e.printStackTrace();
+
+        return result;
+    }
+
+    private <E> E query(@NotNull Connection connection, @Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
+        E result;
+
+        try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
+            assert ps != null;
+
+            try (ResultSet rs = ps.executeQuery()) {
+                result = function.apply(rs);
             }
         }
 
         return result;
     }
 
-    private <E> E query(@Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) {
+    private <E> E query(@Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
         Connection connection = getConnection();
         if (connection == null) {
             logger.log(Level.WARNING, "Could not get the connection!");
             return null;
         }
-        /*
-        logger.log(Level.WARNING, "query sql: " + query);
-        if (vars != null) {
-            for (int i = 0; i < vars.length; i++) {
-                logger.log(Level.WARNING, "query data " + i + ": " + vars[i].toString());
-            }
-        }
-         */
 
-        return query(connection, query, function, vars);
+        E result = query(connection, query, function, vars);
+
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error closing connection");
+            e.printStackTrace();
+        }
+
+        return result;
     }
 
     private Pair<String, Serializable[]> getSQLConditionKey(@NotNull T item) {
@@ -211,7 +198,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) {
+    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) throws SQLException{
         Pair<String, Serializable[]> condKeyVal = getSQLConditionKey(sample);
         @Language("sql") String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKeyVal.getFirst() + " LIMIT 1) s;";
         // logger.log(Level.INFO, "Exists?");
@@ -230,7 +217,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws IOException, SQLException {
+    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws SQLException {
         T item = defaultGenerator.apply(ids);
         String[] pKeyNames = item.getPrimaryKeyName();
         if (ids.length != pKeyNames.length) {
@@ -288,7 +275,6 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
                     result = null;
                 }
             } catch (SQLException e) {
-                logger.log(Level.WARNING, "MySQL error getting data in " + prefix + table);
                 exception[0] = e;
             }
             return result;
@@ -301,12 +287,24 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
 
     @Override
     public boolean createTable(TableData table) {
-        return execute(table.getCreateString(prefix));
+        try {
+            return execute(table.getCreateString(prefix));
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "SQLException while creating table " + table.getName());
+            e.printStackTrace();
+        }
+        return false;
     }
 
     @Override
     public boolean dropTable(String table) {
-        return execute("DROP TABLE IF EXISTS `" + prefix + table + "`;");
+        try {
+            return execute("DROP TABLE IF EXISTS `" + prefix + table + "`;");
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "SQLException while dropping table " + table);
+            e.printStackTrace();
+        }
+        return false;
     }
 
     private boolean saveData(Connection connection, @NotNull String table, @NotNull T item) {
@@ -324,22 +322,22 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             fieldData[i] = data;
             fieldData[i + fields.length] = data;
         }
-        if (connection == null) {
-            return execute(sqlQuery, fieldData);
+        try {
+            if (connection == null) {
+                return execute(sqlQuery, fieldData);
+            } else {
+                return execute(connection, sqlQuery, fieldData);
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "SQLException while saving item to table " + table);
+            e.printStackTrace();
         }
-        else {
-            return execute(connection, sqlQuery, fieldData);
-        }
+        return false;
     }
 
     @Override
     public boolean saveData(@NotNull String table, @NotNull T item) {
-        Connection connection = getConnection();
-        if (connection == null) {
-            logger.log(Level.WARNING, "Could not get the connection!");
-            return false;
-        }
-        return saveData(connection, table, item);
+        return saveData(null, table, item);
     }
 
     @Override
@@ -361,6 +359,12 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
                 keys[i] = item.getFieldValue(keyNames[i]);
             }
             results.put(Arrays.asList(keys), saveData(connection, table, item));
+        }
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error while closing connection after saving item list");
+            e.printStackTrace();
         }
         return results;
     }

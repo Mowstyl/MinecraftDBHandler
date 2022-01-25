@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -156,7 +157,7 @@ public class DBObjectManager<T extends DBObject> {
      * @param keys List of values the primary keys of the queried object has
      * @return Whether the item exists or not
      */
-    public boolean exists(@NotNull Serializable[] keys) {
+    public boolean exists(@NotNull Serializable[] keys) throws IOException, SQLException {
         return driver.contains(table.getName(), keys);
     }
 
