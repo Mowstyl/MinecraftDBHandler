@@ -41,7 +41,7 @@ public class DBObjectManager<T extends DBObject> {
      * @param defaultGenerator Function that receives the primary key and returns a sample object of the type T. Must admit null as input for dummy items
      * @param config Any config options needed by the selected storage driver type
      */
-    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Function<Serializable[], T> defaultGenerator, Object... config) {
+    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Function<Serializable[], T> defaultGenerator, Object... config) throws IOException {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         if (inactiveTime == null) {
@@ -97,14 +97,14 @@ public class DBObjectManager<T extends DBObject> {
         if (this.driver == null) {
             throw new IllegalArgumentException("Unsupported storage type " + type);
         }
-        driver.createTable(table);
+        createTable();
     }
 
     /**
      * Create the table to store data associated with this kind of object
      * @throws IOException if there was an error while trying to
      */
-    public void createTable() throws IOException {
+    private void createTable() throws IOException {
         boolean result = driver.createTable(table);
         if (!result) {
             throw new IOException("Unable to create the table " + table.getName() + " for the plugin " + plugin.getName());
