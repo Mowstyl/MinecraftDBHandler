@@ -93,8 +93,10 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
                 Type mapType = new TypeToken<Map<String, Object>>(){}.getType();
                 data = gson.fromJson(reader, mapType);
             }
-            for (String field : data.keySet()) {
-                dbObject.setFieldValue(field, data.get(field));
+            for (String field : dbObject.getFields()) {
+                if (data.containsKey(field)) {
+                    dbObject.setFieldValue(field, data.get(field));
+                }
             }
         }
         else {
