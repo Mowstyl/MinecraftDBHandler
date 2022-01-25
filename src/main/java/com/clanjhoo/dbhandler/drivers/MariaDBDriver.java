@@ -12,7 +12,6 @@ import java.io.Serializable;
 import java.sql.*;
 import java.util.*;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -75,7 +74,33 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             PreparedStatement ps = conn.prepareStatement(query);
 
             for (int i = 0; i < vars.length; i++) {
-                ps.setObject(i + 1, vars[i]);
+                if (vars[i] instanceof UUID) {
+                    vars[i] = vars[i].toString();
+                }
+                if (vars[i] instanceof String) {
+                    ps.setString(i + 1, (String) vars[i]);
+                }
+                if (vars[i] instanceof Byte) {
+                    ps.setByte(i + 1, (byte) vars[i]);
+                }
+                else if (vars[i] instanceof Short) {
+                    ps.setShort(i + 1, (short) vars[i]);
+                }
+                else if (vars[i] instanceof Integer) {
+                    ps.setInt(i + 1, (int) vars[i]);
+                }
+                else if (vars[i] instanceof Long) {
+                    ps.setLong(i + 1, (long) vars[i]);
+                }
+                else if (vars[i] instanceof Float) {
+                    ps.setFloat(i + 1, (float) vars[i]);
+                }
+                else if (vars[i] instanceof Double) {
+                    ps.setDouble(i + 1, (double) vars[i]);
+                }
+                else{
+                    ps.setObject(i + 1, vars[i]);
+                }
             }
 
             return ps;
@@ -154,6 +179,14 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             logger.log(Level.WARNING, "Could not get the connection!");
             return null;
         }
+        /*
+        logger.log(Level.WARNING, "query sql: " + query);
+        if (vars != null) {
+            for (int i = 0; i < vars.length; i++) {
+                logger.log(Level.WARNING, "query data " + i + ": " + vars[i].toString());
+            }
+        }
+         */
 
         return query(connection, query, function, vars);
     }
@@ -181,6 +214,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     public boolean contains(@NotNull String table, @NotNull Serializable[] ids) {
         Pair<String, Serializable[]> condKeyVal = getSQLConditionKey(sample);
         @Language("sql") String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKeyVal.getFirst() + " LIMIT 1) s;";
+        // logger.log(Level.INFO, "Exists?");
         return Boolean.TRUE.equals(query(sqlQuery, (rs) -> {
             boolean res = false;
             try {
@@ -209,19 +243,48 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         Pair<String, Serializable[]> condKeyVal = getSQLConditionKey(item);
         SQLException[] exception = new SQLException[]{null};
         @Language("sql") String sqlQuery = "SELECT * FROM `" + prefix + table + "` WHERE " + condKeyVal.getFirst() + " LIMIT 1;";
+        // logger.log(Level.INFO, "Load Query");
         T aux = query(sqlQuery, (rs) -> {
             T result = item;
             try {
                 if (rs != null && rs.next()) {
                     for (String field : result.getFields()) {
-                        Serializable data = (Serializable) rs.getObject(field);
-                        if (result.getFieldValue(field) instanceof UUID) {
-                            data = UUID.fromString((String) data);
+                        Serializable original = result.getFieldValue(field);
+                        Serializable data;
+                        if (original instanceof UUID) {
+                            data = UUID.fromString(rs.getString(field));
                         }
+                        else if (original instanceof String) {
+                            data = rs.getString(field);
+                        }
+                        else if (original instanceof Byte) {
+                            data = rs.getByte(field);
+                        }
+                        else if (original instanceof Short) {
+                            data = rs.getShort(field);
+                        }
+                        else if (original instanceof Integer) {
+                            data = rs.getInt(field);
+                        }
+                        else if (original instanceof Long) {
+                            data = rs.getLong(field);
+                        }
+                        else if (original instanceof Float) {
+                            data = rs.getFloat(field);
+                        }
+                        else if (original instanceof Double) {
+                            data = rs.getDouble(field);
+                        }
+                        else{
+                            data = (Serializable) rs.getObject(field);
+                        }
+
                         result.setFieldValue(field, data);
+                        // logger.log(Level.WARNING, field + ": " + data.toString());
                     }
                 }
                 else {
+                    logger.log(Level.WARNING, "Data not found in " + prefix + table);
                     result = null;
                 }
             } catch (SQLException e) {

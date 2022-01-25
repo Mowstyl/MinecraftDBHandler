@@ -223,7 +223,32 @@ public class DBObjectManager<T extends DBObject> {
         return canRunLater;
     }
 
-    private void save(boolean delete, @NotNull Collection<List<Serializable>> keys) {
+    private void rawSave(boolean delete, @NotNull List<T> items) {
+        if (items.size() == 0) {
+            return;
+        }
+        try {
+            Map<List<Serializable>, Boolean> results = driver.saveData(table.getName(), items);
+            if (delete) {
+                for (List<Serializable> result : results.keySet()) {
+                    if (results.get(result)) {
+                        loadedData.remove(result);
+                        itemData.remove(result);
+                        lastChecked.remove(result);
+                    }
+                    else {
+                        logger.log(Level.SEVERE, "Could not save an item on table " + table.getName() + "!");
+                    }
+                }
+            }
+        }
+        catch (Exception ex) {
+            logger.log(Level.SEVERE, "Could not save data on table " + table.getName() + "!");
+            ex.printStackTrace();
+        }
+    }
+
+    private void save(boolean async, boolean delete, @NotNull Collection<List<Serializable>> keys) {
         if (keys.size() == 0) {
             return;
         }
@@ -242,27 +267,16 @@ public class DBObjectManager<T extends DBObject> {
                 items.add(item);
             }
         }
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                Map<List<Serializable>, Boolean> results = driver.saveData(table.getName(), items);
-                if (delete) {
-                    for (List<Serializable> result : results.keySet()) {
-                        if (results.get(result)) {
-                            loadedData.remove(result);
-                            itemData.remove(result);
-                            lastChecked.remove(result);
-                        }
-                        else {
-                            logger.log(Level.SEVERE, "Could not save an item on table " + table.getName() + "!");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) {
-                logger.log(Level.SEVERE, "Could not save data on table " + table.getName() + "!");
-                ex.printStackTrace();
-            }
-        });
+        if (async) {
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> rawSave(delete, items));
+        }
+        else {
+            rawSave(delete, items);
+        }
+    }
+
+    private void save(boolean delete, @NotNull Collection<List<Serializable>> keys) {
+        save(true, delete, keys);
     }
 
     private void save(boolean delete, @NotNull List<Serializable>... keys) {
@@ -303,22 +317,29 @@ public class DBObjectManager<T extends DBObject> {
         this.save(true, keyList);
     }
 
-    private void saveFromMap(@NotNull Map<List<Serializable>, T> dict, boolean remove) {
-        save(remove, dict.keySet());
+    private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, T> dict, boolean remove) {
+        save(async, remove, dict.keySet());
     }
 
     /**
      * Save the data of all the objects currently loaded
      */
     public void saveAll() {
-        saveFromMap(itemData, false);
+        saveFromMap(true, itemData, false);
     }
 
     /**
      * Save the data of all the objects currently loaded and remove the objects that were successfully saved
      */
     public void saveAndRemoveAll() {
-        saveFromMap(itemData, true);
+        saveFromMap(true, itemData, true);
+    }
+
+    /**
+     * Save the data of all the objects currently loaded and remove the objects that were successfully saved without tasks (may cause lots of lag, for onDisable only)
+     */
+    public void saveAndRemoveAllSync() {
+        saveFromMap(false, itemData, true);
     }
 
     /**
