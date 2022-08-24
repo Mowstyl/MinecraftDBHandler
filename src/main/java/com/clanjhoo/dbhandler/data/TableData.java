@@ -1,18 +1,14 @@
 package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.utils.Pair;
-import org.bukkit.Bukkit;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.logging.Level;
 
 public class TableData {
-    private static final Map<String, TableData> tableMap = new ConcurrentHashMap<>();
-
     private final String name;
     private Set<String> primaryKeys;
     private final List<Set<String>> uniqueKeys;
@@ -21,10 +17,6 @@ public class TableData {
 
 
     public TableData(String name) {
-        if (tableMap.containsKey(name)) {
-            throw new IllegalArgumentException("Table already exists");
-        }
-        tableMap.put(name, this);
         this.name = name;
         primaryKeys = null;
         data = new ConcurrentHashMap<>();
