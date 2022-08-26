@@ -8,10 +8,11 @@ import org.jetbrains.annotations.NotNull;
 import java.io.Serializable;
 import java.util.*;
 
-public class SampleEconomyPlayer implements DBObject {
+public class SampleEconomyPlayer extends DBObject {
     private UUID playerId;
     private long currency;
 
+    /*
     @Override
     public @NotNull String getTableName() {
         return "EconomyPlayer";
@@ -102,4 +103,5 @@ public class SampleEconomyPlayer implements DBObject {
                 throw new IllegalArgumentException("Unknown field: " + field);
         }
     }
+     */
 }

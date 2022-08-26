@@ -1,6 +1,8 @@
 package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.utils.Pair;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -9,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class TableData {
+    private static Map<String, TableData> definedTables = new ConcurrentHashMap<>();
+
     private final String name;
     private Set<String> primaryKeys;
     private final List<Set<String>> uniqueKeys;
@@ -16,7 +20,20 @@ public class TableData {
     private final Map<String, Pair<String, TableData>> foreignKeys;
 
 
-    public TableData(String name) {
+    public static @NotNull TableData getTableData(String name) {
+        if (definedTables.containsKey(name)) {
+            return definedTables.get(name);
+        }
+        TableData table = new TableData(name);
+        definedTables.put(name, table);
+        return table;
+    }
+
+    public static @Nullable TableData findTableData(String name) {
+        return definedTables.get(name);
+    }
+
+    private TableData(String name) {
         this.name = name;
         primaryKeys = null;
         data = new ConcurrentHashMap<>();
@@ -37,6 +54,10 @@ public class TableData {
         FieldData otherData = otherTable.data.get(otherField);
         data.put(thisField, otherData);
         foreignKeys.put(thisField, new Pair<>(otherField, otherTable));
+    }
+
+    public Map<String, Pair<String, TableData>> getForeignKeys() {
+        return foreignKeys;
     }
 
     /**
@@ -62,12 +83,20 @@ public class TableData {
         primaryKeys = getFieldSet(keys);
     }
 
+    public Set<String> getPrimaryKeys() {
+        return primaryKeys;
+    }
+
     /**
-     * Set a list of existing fields as the Primary Key
+     * Set a list of existing fields as unique
      * @param fields The name of the fields to be set as unique in conjunction
      */
     public void addUniqueConstraint(String... fields) {
         uniqueKeys.add(getFieldSet(fields));
+    }
+
+    public List<Set<String>> getUniques() {
+        return uniqueKeys;
     }
 
     private Set<String> getFieldSet(String... rawFields) {
