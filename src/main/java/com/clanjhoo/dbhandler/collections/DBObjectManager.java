@@ -29,7 +29,6 @@ public class DBObjectManager<T extends DBObject> {
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
     private final Logger logger;
-    private final Function<Serializable[], T> defaultGenerator;
     private final TableData table;
     private final long inactiveTime;
 
@@ -38,10 +37,9 @@ public class DBObjectManager<T extends DBObject> {
      * @param plugin The plugin that has created the object
      * @param inactiveTime Time in seconds to remove inactive objects from the manager
      * @param type Type of the storage driver
-     * @param defaultGenerator Function that receives the primary key and returns a sample object of the type T. Must admit null as input for dummy items
      * @param config Any config options needed by the selected storage driver type
      */
-    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Function<Serializable[], T> defaultGenerator, Object... config) throws IOException {
+    public DBObjectManager(@NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         if (inactiveTime == null) {

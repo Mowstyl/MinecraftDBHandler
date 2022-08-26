@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public abstract class DBObject {
+    // TODO: Los miembros estáticos son compartidos...
     private static boolean isLoaded = false;
     private static Class<? extends DBObject> meself = null;
     private static Map<String, FieldData> fieldDataList = null;
@@ -220,6 +221,12 @@ public abstract class DBObject {
                 ));
 
         isLoaded = true;
+    }
+
+    public <T extends DBObject> T fillDefaults() {
+        if (!isLoaded) {
+            load(this.getClass());
+        }
     }
 
     public static void loadForeignKeys() {
