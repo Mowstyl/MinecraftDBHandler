@@ -1,8 +1,5 @@
-package com.clanjhoo.dbhandler.drivers;
+package com.clanjhoo.dbhandler.data;
 
-import com.clanjhoo.dbhandler.DBHandler;
-import com.clanjhoo.dbhandler.data.DBObject;
-import com.clanjhoo.dbhandler.data.TableData;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -10,40 +7,34 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
 import java.lang.reflect.Type;
-import java.sql.SQLException;
 import java.util.*;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
-    private final File storage;
-    private final Logger logger;
+class JSONDriver<T> implements DatabaseDriver<T> {
     // private static final Pattern jsonFile = Pattern.compile("(.*)\\.json");
     private static final Pattern filePattern = Pattern.compile("^(?!.{256,})(?!.*\\.\\..*)(?!(aux|clock\\$|con|nul|prn|com[1-9]|lpt[1-9])(?:\\$|\\.))[\\.\\w\\-$()+=\\[\\\\\\];#@~,&'][ \\.\\w\\-$()+=\\[\\\\\\];#@~,&']+[\\w\\-$()+=\\[\\\\\\];#@~,&']$");
 
+    private final File storage;
+    private final Logger logger;
+    private final DBObjectManager<T> manager;
 
-    public JSONDriver(JavaPlugin plugin, String storageFolderName) {
+    /**
+     * Instantiates a new JSON Driver object. Used when StorageType.JSON is selected when instantiating DBObjectManager
+     * @param plugin The plugin that has created the object. This will be passed automatically by DBObjectManager constructor
+     * @param manager The DBObjectManager that is using this driver. This will be passed automatically by DBObjectManager constructor
+     * @param storageFolderName The name of the folder containing the database, created inside of the plugin data folder. Must be passed in the config array of the DBObjectManager constructor
+     * @see DBObjectManager#DBObjectManager(Class clazz, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
+     */
+    JSONDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String storageFolderName) {
         logger = plugin.getLogger();
         storage = new File(plugin.getDataFolder(), storageFolderName);
         if (storage.mkdirs()) {
             logger.log(Level.FINE, "Created local storage folder for raw JSON data");
         }
+        this.manager = manager;
     }
-
-    /*
-    @Override
-    @NotNull
-    public Set<String> getTables() {
-        String[] directories = storage.list((current, name) -> new File(current, name).isDirectory());
-        if (directories == null) {
-            return new HashSet<>();
-        }
-        return new HashSet<>(Arrays.asList(directories));
-    }
-     */
 
     @Override
     public boolean contains(@NotNull String table, @NotNull Serializable[] ids) {
@@ -63,7 +54,7 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws IOException, SQLException {
+    public T loadData(@NotNull String table, @NotNull Serializable[] ids) throws IOException, ReflectiveOperationException {
         if (!filePattern.matcher(table).matches()) {
             throw new IllegalArgumentException("Invalid table name");
         }
@@ -77,30 +68,26 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
         }
         File tableFolder = new File(storage, table);
         File dataFile = new File(tableFolder,  id + ".json");
-        T dbObject = defaultGenerator.apply(ids);
-        String[] pKeyNames = dbObject.getPrimaryKeyName();
+        T dbObject;
+        String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         if (pKeyNames.length != ids.length) {
             throw new IllegalArgumentException("You must specify a value for each primary key defined for the object");
         }
         Arrays.sort(pKeyNames);
-        for (int i = 0; i < ids.length; i++) {
-            dbObject.setFieldValue(pKeyNames[i], ids[i]);
-        }
+        Map<String, Serializable> data;
         if (dataFile.exists()) {
-            Map<String, Serializable> data;
             try (FileReader reader = new FileReader(dataFile)) {
                 Gson gson = new Gson();
                 Type mapType = new TypeToken<Map<String, Object>>(){}.getType();
                 data = gson.fromJson(reader, mapType);
             }
-            for (String field : dbObject.getFields()) {
-                if (data.containsKey(field)) {
-                    dbObject.setFieldValue(field, data.get(field));
-                }
-            }
         }
         else {
-            dbObject = null;
+            data = Collections.emptyMap();
+        }
+        dbObject = manager.getInstance(data, false);
+        for (int i = 0; i < ids.length; i++) {
+            manager.setValue(dbObject, pKeyNames[i], ids[i]);
         }
         return dbObject;
     }
@@ -130,20 +117,20 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
         return tableFile.delete();
     }
 
-    private String getPrimaryKeyConcat(@NotNull T item) {
-        String[] primaryKeys = item.getPrimaryKeyName();
+    private String getPrimaryKeyConcat(@NotNull T item) throws ReflectiveOperationException {
+        String[] primaryKeys = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         String[] pKeyVals = new String[primaryKeys.length];
 
         Arrays.sort(primaryKeys);
         for (int i = 0; i < primaryKeys.length; i++) {
-            pKeyVals[i] = item.getFieldValue(primaryKeys[i]).toString();
+            pKeyVals[i] = manager.getValue(item, primaryKeys[i]).toString();
         }
 
         return String.join("_", pKeyVals);
     }
 
     @Override
-    public boolean saveData(@NotNull String table, @NotNull T item) {
+    public boolean saveData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException {
         if (!filePattern.matcher(table).matches()) {
             throw new IllegalArgumentException("Invalid table name");
         }
@@ -153,7 +140,7 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
         }
         File dataFile = new File(storage, table + "/" + id + ".json");
         Gson gson = new Gson();
-        String serializedData = gson.toJson(DBObject.toMap(item));
+        String serializedData = gson.toJson(manager.toMap(item));
         try (FileWriter writer = new FileWriter(dataFile)) {
             writer.write(serializedData);
             writer.flush();
@@ -166,17 +153,17 @@ public class JSONDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) {
+    public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
         Map<List<Serializable>, Boolean> results = new HashMap<>();
         if (items.size() == 0) {
             return results;
         }
-        String[] keyNames = items.get(0).getPrimaryKeyName();
+        String[] keyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         Arrays.sort(keyNames);
         Serializable[] keys = new Serializable[keyNames.length];
         for (T item : items) {
             for (int i = 0; i < keyNames.length; i++) {
-                keys[i] = item.getFieldValue(keyNames[i]);
+                keys[i] = manager.getValue(item, keyNames[i]);
             }
             results.put(Arrays.asList(keys), saveData(table, item));
         }

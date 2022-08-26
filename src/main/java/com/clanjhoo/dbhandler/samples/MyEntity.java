@@ -3,12 +3,11 @@ package com.clanjhoo.dbhandler.samples;
 import com.clanjhoo.dbhandler.annotations.DataField;
 import com.clanjhoo.dbhandler.annotations.Entity;
 import com.clanjhoo.dbhandler.annotations.PrimaryKey;
-import com.clanjhoo.dbhandler.data.DBObject;
 
 import java.util.UUID;
 
 @Entity(table = "thebath")
-public class MyEntity extends DBObject {
+public class MyEntity {
     // static fields will be ignored
     public static float flotacion = 2;
 

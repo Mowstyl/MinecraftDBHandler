@@ -1,8 +1,5 @@
-package com.clanjhoo.dbhandler.drivers;
+package com.clanjhoo.dbhandler.data;
 
-import com.clanjhoo.dbhandler.data.DBObject;
-import com.clanjhoo.dbhandler.data.TableData;
-import com.clanjhoo.dbhandler.utils.Pair;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
@@ -14,13 +11,25 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
+class MariaDBDriver<T> implements DatabaseDriver<T> {
     private final String host, database, username, password, prefix;
     private final int port;
     private final Logger logger;
-    private final T sample;
+    private final DBObjectManager<T> manager;
 
-    public MariaDBDriver(JavaPlugin plugin, T sample, String host, int port, String database, String username, String password, String prefix) {
+    /**
+     * Instantiates a new JSON Driver object. Used when StorageType.MARIADB or StorageType.MYSQL is selected when instantiating DBObjectManager
+     * @param plugin The plugin that has created the object. This will be passed automatically by DBObjectManager constructor
+     * @param manager The DBObjectManager that is using this driver. This will be passed automatically by DBObjectManager constructor
+     * @param host The address of the SQL server. Must be passed in the config array of the DBObjectManager constructor
+     * @param port The port the SQL server is listening to. Must be passed in the config array of the DBObjectManager constructor
+     * @param database The name of the database to use. Must be passed in the config array of the DBObjectManager constructor
+     * @param username The user of the database the driver will use. Must be passed in the config array of the DBObjectManager constructor
+     * @param password The password of the specified user. Must be passed in the config array of the DBObjectManager constructor
+     * @param prefix The prefix to add to the name of all tables. Must be passed in the config array of the DBObjectManager constructor
+     * @see DBObjectManager#DBObjectManager(Class clazz, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
+     */
+    MariaDBDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String host, int port, @NotNull String database, @NotNull String username, @NotNull String password, @NotNull String prefix) {
         new org.mariadb.jdbc.Driver();
         this.logger = plugin.getLogger();
         this.host = host;
@@ -29,7 +38,7 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         this.username = username;
         this.password = password;
         this.prefix = prefix;
-        this.sample = sample;
+        this.manager = manager;
     }
 
     // DO NOT CALL DIRECTLY, USE getConnection instead
@@ -178,29 +187,24 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         return result;
     }
 
-    private Pair<String, Serializable[]> getSQLConditionKey(@NotNull T item) {
-        String[] pKeyNames = item.getPrimaryKeyName();
+    private String getSQLConditionKey() {
+        String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         String[] pKeyConds = new String[pKeyNames.length];
-        Serializable[] pKeyValues = new Serializable[pKeyNames.length];
         for (int i = 0; i < pKeyNames.length; i++) {
-            Serializable pKeyValue = item.getFieldValue(pKeyNames[i]);
+            Class<Serializable> clazz = manager.getType(pKeyNames[i]);
             String compOp = "=";
-            if (pKeyValue instanceof UUID) {
-                pKeyValue = pKeyValue.toString();
-            }
-            if (pKeyValue instanceof String) {
+            if (UUID.class.isAssignableFrom(clazz) || String.class.isAssignableFrom(clazz)) {
                 compOp = "LIKE";
             }
             pKeyConds[i] = "`" + pKeyNames[i] + "` " + compOp + " ?";
-            pKeyValues[i] = pKeyValue;
         }
-        return new Pair<>(String.join(" AND ", pKeyConds), pKeyValues);
+        return String.join(" AND ", pKeyConds);
     }
 
     @Override
-    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) throws SQLException{
-        Pair<String, Serializable[]> condKeyVal = getSQLConditionKey(sample);
-        @Language("sql") String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKeyVal.getFirst() + " LIMIT 1) s;";
+    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) throws SQLException {
+        String condKey = getSQLConditionKey();
+        @Language("sql") String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1) s;";
         // logger.log(Level.INFO, "Exists?");
         return Boolean.TRUE.equals(query(sqlQuery, (rs) -> {
             boolean res = false;
@@ -217,72 +221,74 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids, Function<Serializable[], T> defaultGenerator) throws SQLException {
-        T item = defaultGenerator.apply(ids);
-        String[] pKeyNames = item.getPrimaryKeyName();
+    public T loadData(@NotNull String table, @NotNull Serializable[] ids) throws SQLException, ReflectiveOperationException {
+        String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         if (ids.length != pKeyNames.length) {
             throw new IllegalArgumentException("You must specify a value for each primary key defined for the object");
         }
         Arrays.sort(pKeyNames);
-        for (int i = 0; i < ids.length; i++) {
-            item.setFieldValue(pKeyNames[i], ids[i]);
-        }
-        Pair<String, Serializable[]> condKeyVal = getSQLConditionKey(item);
+        String condKey = getSQLConditionKey();
         SQLException[] exception = new SQLException[]{null};
-        @Language("sql") String sqlQuery = "SELECT * FROM `" + prefix + table + "` WHERE " + condKeyVal.getFirst() + " LIMIT 1;";
+        @Language("sql") String sqlQuery = "SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1;";
         // logger.log(Level.INFO, "Load Query");
-        T aux = query(sqlQuery, (rs) -> {
-            T result = item;
+        Map<String, Serializable> data = new HashMap<>();
+        query(sqlQuery, (rs) -> {
             try {
                 if (rs != null && rs.next()) {
-                    for (String field : result.getFields()) {
-                        Serializable original = result.getFieldValue(field);
-                        Serializable data;
-                        if (original instanceof UUID) {
-                            data = UUID.fromString(rs.getString(field));
+                    for (String field : manager.getTableData().getFields()) {
+                        Serializable item;
+                        Class<Serializable> type = manager.getType(field);
+                        if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
+                            item = rs.getByte(field);
                         }
-                        else if (original instanceof String) {
-                            data = rs.getString(field);
+                        else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
+                            item = rs.getShort(field);
                         }
-                        else if (original instanceof Byte) {
-                            data = rs.getByte(field);
+                        else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
+                            item = rs.getInt(field);
                         }
-                        else if (original instanceof Short) {
-                            data = rs.getShort(field);
+                        else if (long.class.equals(type) || Long.class.isAssignableFrom(type)) {
+                            item = rs.getLong(field);
                         }
-                        else if (original instanceof Integer) {
-                            data = rs.getInt(field);
+                        else if (float.class.equals(type) || Float.class.isAssignableFrom(type)) {
+                            item = rs.getFloat(field);
                         }
-                        else if (original instanceof Long) {
-                            data = rs.getLong(field);
+                        else if (double.class.equals(type) || Double.class.isAssignableFrom(type)) {
+                            item = rs.getDouble(field);
                         }
-                        else if (original instanceof Float) {
-                            data = rs.getFloat(field);
+                        else if (boolean.class.equals(type) || Boolean.class.isAssignableFrom(type)) {
+                            item = rs.getBoolean(field);
                         }
-                        else if (original instanceof Double) {
-                            data = rs.getDouble(field);
+                        else if (char.class.equals(type) || Character.class.isAssignableFrom(type)) {
+                            item = rs.getString(field).charAt(0);
+                        }
+                        else if (String.class.isAssignableFrom(type)) {
+                            item = rs.getString(field);
+                        }
+                        else if (UUID.class.isAssignableFrom(type)) {
+                            item = UUID.fromString(rs.getString(field));
                         }
                         else{
-                            data = (Serializable) rs.getObject(field);
+                            item = (Serializable) rs.getObject(field);
                         }
 
-                        result.setFieldValue(field, data);
-                        // logger.log(Level.WARNING, field + ": " + data.toString());
+                        data.put(field, item);
                     }
-                }
-                else {
-                    // logger.log(Level.WARNING, "Data not found in " + prefix + table);
-                    result = null;
                 }
             } catch (SQLException e) {
                 exception[0] = e;
             }
-            return result;
-        }, (Object[]) condKeyVal.getSecond());
+            return data;
+        }, (Object[]) ids);
         if (exception[0] != null) {
             throw exception[0];
         }
-        return aux;
+
+        T dbObject = manager.getInstance(data, false);
+        for (int i = 0; i < ids.length; i++) {
+            manager.setValue(dbObject, pKeyNames[i], ids[i]);
+        }
+        return dbObject;
     }
 
     @Override
@@ -307,15 +313,15 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
         return false;
     }
 
-    private boolean saveData(Connection connection, @NotNull String table, @NotNull T item) {
+    private boolean saveData(Connection connection, @NotNull String table, @NotNull T item) throws ReflectiveOperationException {
         @Language("sql") String sqlQuery = "INSERT INTO `" + prefix + table + "` (`";
-        String[] fields = item.getFields().toArray(new String[0]);
+        String[] fields = manager.getTableData().getFields().toArray(new String[0]);
         sqlQuery += String.join("`, `", fields) + "`) VALUES (";
         sqlQuery += String.join(", ", Collections.nCopies(fields.length, "?")) + ") ON DUPLICATE KEY UPDATE `";
         sqlQuery += String.join("` = ?, `", fields) + "` = ?;";
         Object[] fieldData = new Serializable[fields.length*2];
         for (int i = 0; i < fields.length; i++) {
-            Serializable data = item.getFieldValue(fields[i]);
+            Serializable data = manager.getValue(item, fields[i]);
             if (data instanceof UUID) {
                 data = data.toString();
             }
@@ -336,12 +342,12 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
     }
 
     @Override
-    public boolean saveData(@NotNull String table, @NotNull T item) {
+    public boolean saveData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException {
         return saveData(null, table, item);
     }
 
     @Override
-    public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) {
+    public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
         Map<List<Serializable>, Boolean> results = new HashMap<>();
         if (items.size() == 0) {
             return results;
@@ -351,12 +357,12 @@ public class MariaDBDriver<T extends DBObject> implements DatabaseDriver<T> {
             logger.log(Level.WARNING, "Could not get the connection!");
             return results;
         }
-        String[] keyNames = items.get(0).getPrimaryKeyName();
+        String[] keyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         Arrays.sort(keyNames);
         Serializable[] keys = new Serializable[keyNames.length];
         for (T item : items) {
             for (int i = 0; i < keyNames.length; i++) {
-                keys[i] = item.getFieldValue(keyNames[i]);
+                keys[i] = manager.getValue(item, keyNames[i]);
             }
             results.put(Arrays.asList(keys), saveData(connection, table, item));
         }

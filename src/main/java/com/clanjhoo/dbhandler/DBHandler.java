@@ -1,12 +1,16 @@
 package com.clanjhoo.dbhandler;
 
-import org.bukkit.Bukkit;
+import com.clanjhoo.dbhandler.data.DBObjectManager;
+import com.clanjhoo.dbhandler.data.StorageType;
+import com.clanjhoo.dbhandler.samples.MyEntity;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.File;
+import java.util.UUID;
 import java.util.logging.Level;
 
+
 public final class DBHandler extends JavaPlugin {
+    DBObjectManager<MyEntity> myEntityManager;
 
     @Override
     public void onLoad() {
@@ -16,10 +20,23 @@ public final class DBHandler extends JavaPlugin {
     @Override
     public void onEnable() {
         // Plugin startup logic
+        try {
+            myEntityManager = new DBObjectManager<>(MyEntity.class, this, null, StorageType.JSON, "store");
+            myEntityManager.initialize();
+            // this.getLogger().log(Level.INFO, myEntityManager.getTableData().getCreateString(null));
+            myEntityManager.getDataAsynchronous(
+                    me -> this.getLogger().log(Level.INFO, me.id + " " + me.bolognesa + " " + me.extra),
+                    () -> this.getLogger().log(Level.WARNING, "WA"),
+                    UUID.fromString("c38ee158-c001-49b6-91ef-af447b11d742"));
+        }
+        catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     @Override
     public void onDisable() {
         // Plugin shutdown logic
+        myEntityManager.saveAndRemoveAllSync();
     }
 }

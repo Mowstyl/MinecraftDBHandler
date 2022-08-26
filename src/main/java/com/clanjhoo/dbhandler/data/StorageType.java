@@ -1,4 +1,4 @@
-package com.clanjhoo.dbhandler.drivers;
+package com.clanjhoo.dbhandler.data;
 
 public enum StorageType {
     JSON,
