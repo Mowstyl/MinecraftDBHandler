@@ -2,7 +2,7 @@ package com.clanjhoo.dbhandler;
 
 import com.clanjhoo.dbhandler.data.DBObjectManager;
 import com.clanjhoo.dbhandler.data.StorageType;
-import com.clanjhoo.dbhandler.samples.MyEntity;
+import com.clanjhoo.dbhandler.samples.SampleEntity;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.UUID;
@@ -10,7 +10,7 @@ import java.util.logging.Level;
 
 
 public final class DBHandler extends JavaPlugin {
-    DBObjectManager<MyEntity> myEntityManager;
+    DBObjectManager<SampleEntity> myEntityManager;
 
     @Override
     public void onLoad() {
@@ -21,7 +21,7 @@ public final class DBHandler extends JavaPlugin {
     public void onEnable() {
         // Plugin startup logic
         try {
-            myEntityManager = new DBObjectManager<>(MyEntity.class, this, null, StorageType.JSON, "store");
+            myEntityManager = new DBObjectManager<>(SampleEntity.class, this, null, StorageType.JSON, "store");
             myEntityManager.initialize();
             // this.getLogger().log(Level.INFO, myEntityManager.getTableData().getCreateString(null));
             myEntityManager.getDataAsynchronous(
