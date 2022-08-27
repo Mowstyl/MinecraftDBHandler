@@ -21,7 +21,7 @@ public final class DBHandler extends JavaPlugin {
     public void onEnable() {
         // Plugin startup logic
         try {
-            myEntityManager = new DBObjectManager<>(SampleEntity.class, this, null, StorageType.JSON, "store");
+            myEntityManager = new DBObjectManager<>(SampleEntity.class, null, this, null, StorageType.JSON, "store");
             myEntityManager.initialize();
             // this.getLogger().log(Level.INFO, myEntityManager.getTableData().getCreateString(null));
             myEntityManager.getDataAsynchronous(

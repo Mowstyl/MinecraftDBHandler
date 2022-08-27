@@ -28,6 +28,7 @@ public class DBObjectManager<T> {
     private final Logger logger;
     private final long inactiveTime;
     private final Class<T> meself;
+    private final Consumer<T> afterTask;
     private TableData tableData;
     private Map<String, FieldData> fieldDataList;
     private Map<String, Pair<String, String>> foreigns;
@@ -236,6 +237,7 @@ public class DBObjectManager<T> {
     /**
      * Instantiates a new DBObjectManager object
      * @param clazz The class of the object to manage
+     * @param afterTask A consumer that takes an item that has just been loaded from database. Can be null
      * @param plugin The plugin that has created the object
      * @param inactiveTime Time in seconds to remove inactive items from the manager
      * @param type Type of the storage driver
@@ -243,10 +245,11 @@ public class DBObjectManager<T> {
      * @see JSONDriver#JSONDriver(JavaPlugin plugin, DBObjectManager manager, String storageFolderName)
      * @see MariaDBDriver#MariaDBDriver(JavaPlugin plugin, DBObjectManager manager, String host, int port, String database, String username, String password, String prefix)
      */
-    public DBObjectManager(@NotNull Class<T> clazz, @NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
+    public DBObjectManager(@NotNull Class<T> clazz, @Nullable Consumer<T> afterTask, @NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.meself = clazz;
+        this.afterTask = afterTask;
 
         initializeTableData();
 
@@ -407,6 +410,9 @@ public class DBObjectManager<T> {
 
     private @NotNull T getDataBlocking(@NotNull List<Serializable> keys) throws ReflectiveOperationException, SQLException, IOException {
         T data = driver.loadData(tableData.getName(), keys.toArray(new Serializable[0]));
+        if (afterTask != null) {
+            afterTask.accept(data);
+        }
         itemData.put(keys, data);
         loadedData.put(keys, true);
         return data;
