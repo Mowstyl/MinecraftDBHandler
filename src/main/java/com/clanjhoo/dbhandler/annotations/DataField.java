@@ -9,6 +9,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.FIELD)
 public @interface DataField {
     String name() default "";
+    boolean enforceValue() default false;
     String value() default "";
     String sqltype() default "";
 }

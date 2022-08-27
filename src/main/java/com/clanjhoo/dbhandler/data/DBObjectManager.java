@@ -294,7 +294,12 @@ public class DBObjectManager<T> {
     protected @NotNull T getDefault() throws ReflectiveOperationException {
         T def = meself.getDeclaredConstructor().newInstance();
         for (FieldData fd : fieldDataList.values()) {
-            setValue(def, fd.field, fd.defaultValue);
+            if (fd.field.isAnnotationPresent(DataField.class)) {
+                DataField fAnn = fd.field.getAnnotation(DataField.class);
+                if (!fAnn.value().isEmpty() || fAnn.enforceValue()) {
+                    setValue(def, fd.field, fd.defaultValue);
+                }
+            }
         }
         return def;
     }
