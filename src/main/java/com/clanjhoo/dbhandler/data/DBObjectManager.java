@@ -389,8 +389,9 @@ public class DBObjectManager<T> {
     }
 
     private <T> List<T> concatenateArgs(T head, T... tail) {
-        List<T> result = Arrays.asList(tail);
-        result.add(0, head);
+        List<T> result = new ArrayList<>(tail.length + 1);
+        result.add(head);
+        result.addAll(Arrays.asList(tail));
         return result;
     }
 
