@@ -383,6 +383,12 @@ public class DBObjectManager<T> {
         return data;
     }
 
+    private <T> List<T> concatenateArgs(T head, T... tail) {
+        List<T> result = Arrays.asList(tail);
+        result.add(0, head);
+        return result;
+    }
+
     /**
      * Create the table to store data associated with this kind of object
      * @throws IOException if there was an error while trying to
@@ -403,32 +409,49 @@ public class DBObjectManager<T> {
 
     /**
      * Loads the item associated with the specified primary key on the main thread
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return The object associated with the key or null if there was some error
      */
-    public @Nullable T getDataBlocking(@NotNull Serializable... keys) {
+    public @Nullable T getDataBlocking(@NotNull Serializable key, Serializable... keys) {
         T item = null;
-        try {
-            item = getDataBlocking(Arrays.asList(keys));
-        } catch (IOException | SQLException e) {
-            logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
-            e.printStackTrace();
-        } catch (ReflectiveOperationException e) {
-            logger.log(Level.WARNING, "There was an error while accessing a field");
-            e.printStackTrace();
+        List<Serializable> aKeys = concatenateArgs(key, keys);
+        lastChecked.put(aKeys, System.currentTimeMillis());
+        // If we aren't loading the specified player
+        if (!loadingData.getOrDefault(aKeys, false)) {
+            // we check if we have to load it, or we have already done it
+            if (!loadedData.getOrDefault(aKeys, false)) {
+                // not loaded, async task
+                loadingData.put(aKeys, true);
+                try {
+                    item = getDataBlocking(aKeys);
+                } catch (IOException | SQLException e) {
+                    logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
+                    e.printStackTrace();
+                } catch (ReflectiveOperationException e) {
+                    logger.log(Level.WARNING, "There was an error while accessing a field");
+                    e.printStackTrace();
+                } finally {
+                    loadingData.put(aKeys, true);
+                }
+            }
+            else {
+                item = itemData.get(aKeys);
+            }
         }
         return item;
     }
 
     /**
      * Return the object associated with the specified primary key if it's already in memory. Otherwise raises an exception
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return The item associated with the key
      * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
      */
-    public @NotNull T tryGetDataNow(@NotNull Serializable... keys) throws AssertionError {
+    public @NotNull T tryGetDataNow(@NotNull Serializable key, Serializable... keys) throws AssertionError {
         Object[] aux = new Object[]{null};
-        boolean result = getDataAsynchronous(Arrays.asList(keys),
+        boolean result = getDataAsynchronous(concatenateArgs(key, keys),
                                              (data) -> aux[0] = data,
                                              () -> {}, true, false, 0);
         if (!result) {
@@ -439,35 +462,38 @@ public class DBObjectManager<T> {
 
     /**
      * Try to get the specified item from the database and pass it to a consumer if found
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
      * @param success Consumer function that gets an object of the type T and works with it
      * @param error Function to be executed if there is an error while trying to get the data
      * @param canRunLater Whether the success function has to be run on this tick or not
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return Whether the success method could be executed (or plan to execute it on a later task) or not
      */
-    public boolean getDataSynchronous(Consumer<T> success, Runnable error, boolean canRunLater, @NotNull Serializable... keys) {
-        return getDataAsynchronous(Arrays.asList(keys), success, error, true, canRunLater, 0);
+    public boolean getDataSynchronous(Consumer<T> success, Runnable error, boolean canRunLater, @NotNull Serializable key, Serializable... keys) {
+        return getDataAsynchronous(concatenateArgs(key, keys), success, error, true, canRunLater, 0);
     }
 
     /**
      * Try to get the specified data with the defined database driver and pass it to a consumer if found
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
      * @param success Consumer function that gets an object of the type T and works with it
      * @param error Function to be executed if there is an error while trying to get the data
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return Whether the success method could be executed (or plan to execute it on a later task) or not
      */
-    public boolean getDataAsynchronous(Consumer<T> success, Runnable error, @NotNull Serializable... keys) {
-        return getDataAsynchronous(Arrays.asList(keys), success, error, false, true, 0);
+    public boolean getDataAsynchronous(Consumer<T> success, Runnable error, @NotNull Serializable key, Serializable... keys) {
+        return getDataAsynchronous(concatenateArgs(key, keys), success, error, false, true, 0);
     }
 
 
     /**
      * Return if the specified object is already stored in the database
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return Whether the item exists or not
      */
-    public boolean exists(@NotNull Serializable[] keys) throws IOException, SQLException {
-        return driver.contains(tableData.getName(), keys);
+    public boolean exists(@NotNull Serializable key, Serializable... keys) throws IOException, SQLException {
+        return driver.contains(tableData.getName(), concatenateArgs(key, keys).toArray(new Serializable[0]));
     }
 
     /**
@@ -602,16 +628,17 @@ public class DBObjectManager<T> {
      * Save the data of the object associated with the specified Primary Key and remove it from memory if the save process was successful
      * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
      */
-    public void saveAndRemove(@NotNull List<Serializable> keys) {
+    private void saveAndRemove(@NotNull List<Serializable> keys) {
         this.save(true, keys);
     }
 
     /**
      * Save the data of the object associated with the specified Primary Key
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
-    public void save(@NotNull Serializable... keys) {
-        List<Serializable> keyList = Arrays.asList(keys);
+    public void save(@NotNull Serializable key, Serializable... keys) {
+        List<Serializable> keyList = concatenateArgs(key, keys);
         this.save(false, keyList);
     }
 
@@ -619,8 +646,8 @@ public class DBObjectManager<T> {
      * Save the data of the object associated with the specified Primary Key and remove it from memory if the save process was successful
      * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
      */
-    public void saveAndRemove(@NotNull Serializable... keys) {
-        List<Serializable> keyList = Arrays.asList(keys);
+    public void saveAndRemove(@NotNull Serializable key, Serializable... keys) {
+        List<Serializable> keyList = concatenateArgs(key, keys);
         this.save(true, keyList);
     }
 
