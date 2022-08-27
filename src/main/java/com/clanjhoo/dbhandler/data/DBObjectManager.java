@@ -144,15 +144,12 @@ public class DBObjectManager<T> {
                             e.printStackTrace();
                         }
                     }
-                    else {
-                        defVal = getDefaultValue(type);
-                    }
                     DataField dann = f.getAnnotation(DataField.class);
                     if (dann != null) {
-                        if (dann.name().length() > 0) {
+                        if (dann.name().length() > 0)
                             name = dann.name();
-                        }
-                        defVal = stringToSerializable(type, dann.value());
+                        if (!dann.value().isEmpty() || dann.enforceValue())
+                            defVal = stringToSerializable(type, dann.value());
                     }
                     return new FieldData(f.isAnnotationPresent(PrimaryKey.class), name, defVal, f, !f.isAnnotationPresent(NotNullField.class));
                 }).collect(Collectors.toMap(fd -> fd.name, fd -> fd));
