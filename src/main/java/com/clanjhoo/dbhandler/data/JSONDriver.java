@@ -54,7 +54,7 @@ class JSONDriver<T> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids) throws IOException, ReflectiveOperationException {
+    public @NotNull T loadData(@NotNull String table, @NotNull Serializable[] ids) throws IOException, ReflectiveOperationException {
         if (!filePattern.matcher(table).matches()) {
             throw new IllegalArgumentException("Invalid table name");
         }

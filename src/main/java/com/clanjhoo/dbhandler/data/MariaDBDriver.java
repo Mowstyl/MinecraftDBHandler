@@ -221,7 +221,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     @Override
-    public T loadData(@NotNull String table, @NotNull Serializable[] ids) throws SQLException, ReflectiveOperationException {
+    public @NotNull T loadData(@NotNull String table, @NotNull Serializable[] ids) throws SQLException, ReflectiveOperationException {
         String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         if (ids.length != pKeyNames.length) {
             throw new IllegalArgumentException("You must specify a value for each primary key defined for the object");

@@ -27,7 +27,7 @@ interface DatabaseDriver<T> {
      * @throws IllegalArgumentException if the specified table name or identifier could not be used
      * @throws NoSuchElementException if the specified table or identifier do not exist
      */
-    @Nullable T loadData(@NotNull String table, @NotNull Serializable[] ids) throws IOException, SQLException, ReflectiveOperationException;
+    @NotNull T loadData(@NotNull String table, @NotNull Serializable[] ids) throws IOException, SQLException, ReflectiveOperationException;
 
     /**
      * @param table name of the table to create
