@@ -93,7 +93,7 @@ public class DBObjectManager<T> {
         if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
             return "TINYINT";
         }
-        if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
+        else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
             return "SMALLINT";
         }
         else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
@@ -339,9 +339,52 @@ public class DBObjectManager<T> {
     }
 
     private void setValue(T obj, Field field, Object value) throws ReflectiveOperationException {
-        if (UUID.class.isAssignableFrom(field.getType()) && value instanceof String) {
+        Class<?> type = field.getType();
+        if (UUID.class.isAssignableFrom(type) && value instanceof String) {
             value = UUID.fromString((String) value);
         }
+        else if (value instanceof Number) {
+            Number v = (Number) value;
+            if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
+                value = v.byteValue();
+            }
+            else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
+                value = v.shortValue();
+            }
+            else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
+                value = v.intValue();
+            }
+            else if (long.class.equals(type) || Long.class.isAssignableFrom(type)) {
+                value = v.longValue();
+            }
+            else if (float.class.equals(type) || Float.class.isAssignableFrom(type)) {
+                value = v.floatValue();
+            }
+            else if (double.class.equals(type) || Double.class.isAssignableFrom(type)) {
+                value = v.doubleValue();
+            }
+        }
+        else if (type.isPrimitive()) {
+            if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
+                value = (byte) value;
+            }
+            else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
+                value = (short) value;
+            }
+            else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
+                value = (int) value;
+            }
+            else if (long.class.equals(type) || Long.class.isAssignableFrom(type)) {
+                value = (long) value;
+            }
+            else if (float.class.equals(type) || Float.class.isAssignableFrom(type)) {
+                value = (float) value;
+            }
+            else if (double.class.equals(type) || Double.class.isAssignableFrom(type)) {
+                value = (double) value;
+            }
+        }
+
         try {
             field.set(obj, value);
         }
