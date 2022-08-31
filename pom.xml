@@ -33,7 +33,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.3.0-SNAPSHOT</version>
+                <version>3.3.0</version>
                 <configuration>
                     <relocations>
                         <relocation>
@@ -70,13 +70,15 @@
         </resources>
     </build>
 
-    <pluginRepositories>
+    <!--<pluginRepositories>-->
         <!-- For Maven Shade snapshot -->
+        <!--
         <pluginRepository>
             <id>apache-repo</id>
             <url>https://repository.apache.org/content/repositories/snapshots/</url>
         </pluginRepository>
-    </pluginRepositories>
+        -->
+    <!--</pluginRepositories>-->
 
     <repositories>
         <repository>
