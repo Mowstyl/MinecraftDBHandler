@@ -30,6 +30,7 @@ public class DBObjectManager<T> {
     private final Class<T> meself;
     private final Consumer<T> afterTask;
     private TableData tableData;
+    private boolean dataInitialized;
     private Map<String, FieldData> fieldDataList;
     private Map<String, Pair<String, String>> foreigns;
 
@@ -164,6 +165,7 @@ public class DBObjectManager<T> {
         if (!entityAnn.table().isEmpty()) {
             tableName = entityAnn.table();
         }
+        dataInitialized = TableData.findTableData(tableName) != null;
         tableData = TableData.getTableData(tableName);
         fieldDataList = DBObjectManager.getFieldInfo(meself);
         fieldDataList.forEach((n, fd) -> {
@@ -177,33 +179,38 @@ public class DBObjectManager<T> {
             if (fieldType == null) {
                 fieldType = sqlTypeFromType(fd.field.getType());
             }
-            tableData.addField(n, fieldType, fd.nullable);
+            if (!dataInitialized) {
+                tableData.addField(n, fieldType, fd.nullable);
+            }
         });
 
-        tableData.setPrimaryKeys(fieldDataList.values().stream()
-                .filter(fd -> fd.isPrimary)
-                .map(fd -> fd.name)
-                .sorted()
-                .toArray(String[]::new));
-
-        Map<String, Set<String>> groupedUniques = new HashMap<>();
-        for (FieldData fd : fieldDataList.values()) {
-            if (!fd.field.isAnnotationPresent(UniqueField.class)) {
-                continue;
-            }
-            UniqueField uniqueAnn = fd.field.getAnnotation(UniqueField.class);
-            String group = uniqueAnn.group();
-            if (group.isEmpty()) {
-                tableData.addUniqueConstraint(fd.name);
-            }
-            else {
-                Set<String> groupSet = groupedUniques.getOrDefault(group, new HashSet<>());
-                groupSet.add(fd.name);
-                groupedUniques.put(group, groupSet);
-            }
+        if (!dataInitialized) {
+            tableData.setPrimaryKeys(fieldDataList.values().stream()
+                    .filter(fd -> fd.isPrimary)
+                    .map(fd -> fd.name)
+                    .sorted()
+                    .toArray(String[]::new));
         }
-        for (Set<String> uniqueSet : groupedUniques.values()) {
-            tableData.addUniqueConstraint(uniqueSet.toArray(new String[0]));
+
+        if (!dataInitialized) {
+            Map<String, Set<String>> groupedUniques = new HashMap<>();
+            for (FieldData fd : fieldDataList.values()) {
+                if (!fd.field.isAnnotationPresent(UniqueField.class)) {
+                    continue;
+                }
+                UniqueField uniqueAnn = fd.field.getAnnotation(UniqueField.class);
+                String group = uniqueAnn.group();
+                if (group.isEmpty()) {
+                    tableData.addUniqueConstraint(fd.name);
+                } else {
+                    Set<String> groupSet = groupedUniques.getOrDefault(group, new HashSet<>());
+                    groupSet.add(fd.name);
+                    groupedUniques.put(group, groupSet);
+                }
+            }
+            for (Set<String> uniqueSet : groupedUniques.values()) {
+                tableData.addUniqueConstraint(uniqueSet.toArray(new String[0]));
+            }
         }
 
         foreigns = fieldDataList.values().stream()
@@ -221,6 +228,9 @@ public class DBObjectManager<T> {
      * Initializes all foreign key related stuff. Must be called AFTER instantiating all the related DBObjectManagers
      */
     public void initialize() {
+        if (dataInitialized) {
+            return;
+        }
         for (String name : foreigns.keySet()) {
             Pair<String, String> name_table = foreigns.get(name);
             TableData other = TableData.findTableData(name_table.getSecond());
