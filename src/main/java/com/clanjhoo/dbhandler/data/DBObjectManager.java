@@ -441,8 +441,9 @@ public class DBObjectManager<T> {
         return data;
     }
 
-    private <T> List<T> concatenateArgs(T head, T... tail) {
-        List<T> result = new ArrayList<>(tail.length + 1);
+    @SafeVarargs
+    private final <K> List<K> concatenateArgs(K head, K... tail) {
+        List<K> result = new ArrayList<>(tail.length + 1);
         result.add(head);
         result.addAll(Arrays.asList(tail));
         return result;

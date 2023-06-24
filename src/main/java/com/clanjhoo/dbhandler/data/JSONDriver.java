@@ -3,6 +3,7 @@ package com.clanjhoo.dbhandler.data;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Consumer;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
@@ -24,8 +25,8 @@ class JSONDriver<T> implements DatabaseDriver<T> {
      * Instantiates a new JSON Driver object. Used when StorageType.JSON is selected when instantiating DBObjectManager
      * @param plugin The plugin that has created the object. This will be passed automatically by DBObjectManager constructor
      * @param manager The DBObjectManager that is using this driver. This will be passed automatically by DBObjectManager constructor
-     * @param storageFolderName The name of the folder containing the database, created inside of the plugin data folder. Must be passed in the config array of the DBObjectManager constructor
-     * @see DBObjectManager#DBObjectManager(Class clazz, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
+     * @param storageFolderName The name of the folder containing the database, created inside the plugin data folder. Must be passed in the config array of the DBObjectManager constructor
+     * @see DBObjectManager#DBObjectManager(Class clazz, Consumer afterTask, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
      */
     JSONDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String storageFolderName) {
         logger = plugin.getLogger();

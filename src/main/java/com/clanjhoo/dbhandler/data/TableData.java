@@ -122,23 +122,23 @@ public class TableData {
         if (prefix == null) {
             prefix = "";
         }
-        String createString = "CREATE TABLE IF NOT EXISTS `" + prefix + name + "` (";
+        StringBuilder createString = new StringBuilder("CREATE TABLE IF NOT EXISTS `" + prefix + name + "` (");
         for (String field : data.keySet()) {
-            createString += getCreateField(field) + ", ";
+            createString.append(getCreateField(field)).append(", ");
         }
-        createString += "CONSTRAINT PK_" + name + " PRIMARY KEY (" + String.join(",", primaryKeys) + ")";
+        createString.append("CONSTRAINT PK_").append(name).append(" PRIMARY KEY (").append(String.join(",", primaryKeys)).append(")");
         for (int i = 0; i < uniqueKeys.size(); i++) {
-            createString += ", CONSTRAINT UC_" + name + i + " UNIQUE (" + String.join(",", uniqueKeys.get(i)) + ")";
+            createString.append(", CONSTRAINT UC_").append(name).append(i).append(" UNIQUE (").append(String.join(",", uniqueKeys.get(i))).append(")");
         }
         for (Map.Entry<String, Pair<String, TableData>> entry : foreignKeys.entrySet()) {
             String localField = entry.getKey();
             Pair<String, TableData> foreignField = entry.getValue();
-            createString += ", CONSTRAINT FK_" + name + localField + " FOREIGN KEY (" + localField + ")";
-            createString += " REFERENCES" + foreignField.getSecond().name + "(" + foreignField.getFirst() + ")";
+            createString.append(", CONSTRAINT FK_").append(name).append(localField).append(" FOREIGN KEY (").append(localField).append(")");
+            createString.append(" REFERENCES").append(foreignField.getSecond().name).append("(").append(foreignField.getFirst()).append(")");
         }
-        createString += ") DEFAULT CHARACTER SET ascii COLLATE ascii_general_ci;";
+        createString.append(") DEFAULT CHARACTER SET ascii COLLATE ascii_general_ci;");
 
-        return createString;
+        return createString.toString();
     }
 
     private String getCreateField(String name) {
