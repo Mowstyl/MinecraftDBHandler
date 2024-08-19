@@ -587,9 +587,9 @@ public class DBObjectManager<T> {
 
 
     /**
-     * Return if the specified object is already stored in the database
+     * Delete an item from the database
      * @param item The item to delete
-     * @return Whether the item exists or not
+     * @return Whether the item has been deleted or not
      */
     public boolean delete(@NotNull T item) throws IOException, SQLException {
         boolean res = false;
