@@ -1,10 +1,10 @@
 package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.annotations.*;
+import com.clanjhoo.dbhandler.utils.KeyedLock;
 import com.clanjhoo.dbhandler.utils.Pair;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.util.Consumer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,16 +13,19 @@ import java.io.Serializable;
 import java.lang.reflect.*;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.Lock;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class DBObjectManager<T> {
+    private final KeyedLock locks = new KeyedLock();
     private final Map<List<Serializable>, Long> lastChecked = new ConcurrentHashMap<>();
-    private final Map<List<Serializable>, T> itemData = new ConcurrentHashMap<>();
-    private final Map<List<Serializable>, Boolean> loadedData = new ConcurrentHashMap<>();
-    private final Map<List<Serializable>, Boolean> loadingData = new ConcurrentHashMap<>();
+    private final Map<List<Serializable>, CompletableFuture<T>> futureData = new ConcurrentHashMap<>();
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
     private final Logger logger;
@@ -465,45 +468,78 @@ public class DBObjectManager<T> {
         if (afterTask != null) {
             afterTask.accept(data);
         }
-        itemData.put(keys, data);
-        loadedData.put(keys, true);
         return data;
+    }
+
+    /**
+     * Try to get the specified data with the defined database driver and pass it to a consumer if found
+     * @param keys List of values the primary keys of the queried object has
+     * @return Whether the success method could be executed (or plan to execute it on a later task) or not
+     */
+    private @NotNull CompletableFuture<T> getFutureData(@NotNull List<Serializable> keys) {
+        lastChecked.put(keys, System.currentTimeMillis());
+        CompletableFuture<T> future;
+        Lock lock = locks.getLock(keys);
+        try {
+            // Only one process at a time from here on.
+            lock.lock();
+            future = futureData.get(keys);
+            // If we don't have a future or the future went wrong
+            if (future == null || future.isCompletedExceptionally()) {
+                // we create a new future
+                future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return getDataBlocking(keys);
+                    } catch (IOException | SQLException ex) {
+                        logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
+                        throw new RuntimeException(ex);
+                    } catch (ReflectiveOperationException ex) {
+                        logger.log(Level.WARNING, "There was an error while accessing a field");
+                        throw new RuntimeException(ex);
+                    }
+                });
+                // and store it
+                futureData.put(keys, future);
+            }
+        }
+        finally {
+            // Always release lock
+            lock.unlock();
+        }
+        return future;
     }
 
     /**
      * Loads the item associated with the specified primary key on the main thread
      * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
-     * @return The object associated with the key or null if there was some error
+     * @return A future with the object associated with the key
      */
-    public @Nullable T getDataBlocking(@NotNull Serializable key, Serializable... keys) {
+    public @NotNull CompletableFuture<T> getFutureData(@NotNull Serializable key, Serializable... keys) {
+        return getFutureData(concatenateArgs(key, keys));
+    }
+
+
+    /**
+     * Return the object associated with the specified primary key if it's already in memory. Otherwise raises an exception
+     * @param keys The primary key
+     * @return The item associated with the key
+     * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
+     */
+    private @NotNull T tryGetDataNow(@NotNull List<Serializable> keys) throws AssertionError {
+        CompletableFuture<T> future = getFutureData(keys);
         T item = null;
-        List<Serializable> aKeys = concatenateArgs(key, keys);
-        lastChecked.put(aKeys, System.currentTimeMillis());
-        // If we aren't loading the specified player
-        if (!loadingData.getOrDefault(aKeys, false)) {
-            // we check if we have to load it, or we have already done it
-            if (!loadedData.getOrDefault(aKeys, false)) {
-                // not loaded, async task
-                loadingData.put(aKeys, true);
-                try {
-                    item = getDataBlocking(aKeys);
-                } catch (IOException | SQLException e) {
-                    logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
-                    e.printStackTrace();
-                } catch (ReflectiveOperationException e) {
-                    logger.log(Level.WARNING, "There was an error while accessing a field");
-                    e.printStackTrace();
-                } finally {
-                    loadingData.put(aKeys, true);
-                }
-            }
-            else {
-                item = itemData.get(aKeys);
-            }
+        if (!future.isDone()) {
+            throw new AssertionError("The data has not been loaded yet!");
+        }
+        try {
+            item = future.get();
+        } catch (InterruptedException | ExecutionException ex) {
+            throw new RuntimeException(ex);
         }
         return item;
     }
+
 
     /**
      * Return the object associated with the specified primary key if it's already in memory. Otherwise raises an exception
@@ -513,39 +549,7 @@ public class DBObjectManager<T> {
      * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
      */
     public @NotNull T tryGetDataNow(@NotNull Serializable key, Serializable... keys) throws AssertionError {
-        Object[] aux = new Object[]{null};
-        boolean result = getDataAsynchronous(concatenateArgs(key, keys),
-                                             (data) -> aux[0] = data,
-                                             () -> {}, true, false, 0);
-        if (!result) {
-            throw new AssertionError("Couldn't load the data on a synchronous way, loading later");
-        }
-        return (T) aux[0];
-    }
-
-    /**
-     * Try to get the specified item from the database and pass it to a consumer if found
-     * @param success Consumer function that gets an object of the type T and works with it
-     * @param error Function to be executed if there is an error while trying to get the data
-     * @param canRunLater Whether the success function has to be run on this tick or not
-     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
-     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
-     * @return Whether the success method could be executed (or plan to execute it on a later task) or not
-     */
-    public boolean getDataSynchronous(Consumer<T> success, Runnable error, boolean canRunLater, @NotNull Serializable key, Serializable... keys) {
-        return getDataAsynchronous(concatenateArgs(key, keys), success, error, true, canRunLater, 0);
-    }
-
-    /**
-     * Try to get the specified data with the defined database driver and pass it to a consumer if found
-     * @param success Consumer function that gets an object of the type T and works with it
-     * @param error Function to be executed if there is an error while trying to get the data
-     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
-     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
-     * @return Whether the success method could be executed (or plan to execute it on a later task) or not
-     */
-    public boolean getDataAsynchronous(Consumer<T> success, Runnable error, @NotNull Serializable key, Serializable... keys) {
-        return getDataAsynchronous(concatenateArgs(key, keys), success, error, false, true, 0);
+        return tryGetDataNow(concatenateArgs(key, keys));
     }
 
 
@@ -559,72 +563,8 @@ public class DBObjectManager<T> {
         return driver.contains(tableData.getName(), concatenateArgs(key, keys).toArray(new Serializable[0]));
     }
 
-    /**
-     * Try to get the specified data with the defined database driver and pass it to a consumer if found
-     * @param keys List of values the primary keys of the queried object has
-     * @param success Consumer function that gets an object of the type T and works with it
-     * @param error Function to be executed if there is an error while trying to get the data
-     * @param mainThread Whether the success function has to be run on the main thread or not
-     * @param canRunLater Whether the success function has to be run on this tick or not
-     * @param attempt Number of attempts done trying to get this data. Should be 0
-     * @return Whether the success method could be executed (or plan to execute it on a later task) or not
-     */
-    private boolean getDataAsynchronous(@NotNull List<Serializable> keys, Consumer<T> success, Runnable error, boolean mainThread, boolean canRunLater, int attempt) {
-        lastChecked.put(keys, System.currentTimeMillis());
-        // If we aren't loading the specified player
-        if (!loadingData.getOrDefault(keys, false)) {
-            // we check if we have to load it, or we have already done it
-            if (!loadedData.getOrDefault(keys, false)) {
-                // not loaded, async task
-                loadingData.put(keys, true);
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                    try {
-                        T data = getDataBlocking(keys);
-                        if (!mainThread) {
-                            success.accept(data);
-                        }
-                    }
-                    catch (Exception ex) {
-                        logger.log(Level.WARNING, "Couldn't load data from table " + tableData.getName());
-                        ex.printStackTrace();
-                        error.run();
-                    }
-                    finally {
-                        loadingData.put(keys, false);
-                    }
-                });
-                if (mainThread && canRunLater) {
-                    Bukkit.getScheduler().runTaskLater(plugin,
-                            () -> getDataAsynchronous(keys, success, error, true, true, attempt + 1), 1);
-                }
-                return !mainThread || canRunLater;
-            } else {
-                // already loaded
-                success.accept(itemData.get(keys));
-                return true;
-            }
-        }
-        else if (canRunLater) {
-            if (attempt < 10) {
-                if (mainThread) {
-                    Bukkit.getScheduler().runTaskLater(plugin,
-                            () -> getDataAsynchronous(keys, success, error, true, true, attempt + 1), 1);
-                }
-                else {
-                    Bukkit.getScheduler().runTaskLaterAsynchronously(plugin,
-                            () -> getDataAsynchronous(keys, success, error, false, true, attempt + 1), 1);
-                }
-            }
-            else {
-                logger.log(Level.WARNING, "Exceeded maximum attempts while loading data from table " + tableData.getName());
-                error.run();
-            }
-        }
-        return canRunLater;
-    }
-
     private void rawSave(boolean delete, @NotNull List<T> items) {
-        if (items.size() == 0) {
+        if (items.isEmpty()) {
             return;
         }
         try {
@@ -632,8 +572,7 @@ public class DBObjectManager<T> {
             if (delete) {
                 for (List<Serializable> result : results.keySet()) {
                     if (results.get(result)) {
-                        loadedData.remove(result);
-                        itemData.remove(result);
+                        futureData.remove(result);
                         lastChecked.remove(result);
                     }
                     else {
@@ -649,23 +588,16 @@ public class DBObjectManager<T> {
     }
 
     private void save(boolean async, boolean delete, @NotNull Collection<List<Serializable>> keys) {
-        if (keys.size() == 0) {
+        if (keys.isEmpty()) {
             return;
         }
         List<T> items = new ArrayList<>();
         for (List<Serializable> key : keys) {
-            if (!loadedData.getOrDefault(key, false)) {
-                continue;
-            }
-            T item = itemData.get(key);
-            if (item == null) {
-                loadedData.remove(key);
-                lastChecked.remove(key);
-                logger.log(Level.WARNING, "Data not loaded but marked as loaded! Please report this bug!");
-            }
-            else {
+            try {
+                T item = tryGetDataNow(key);
                 items.add(item);
             }
+            catch (Exception ignore) {}
         }
         if (async) {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> rawSave(delete, items));
@@ -679,6 +611,7 @@ public class DBObjectManager<T> {
         save(true, delete, keys);
     }
 
+    @SafeVarargs
     private void save(boolean delete, @NotNull List<Serializable>... keys) {
         save(delete, Arrays.asList(keys));
     }
@@ -714,7 +647,7 @@ public class DBObjectManager<T> {
         this.save(true, keyList);
     }
 
-    private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, T> dict, boolean remove) {
+    private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, CompletableFuture<T>> dict, boolean remove) {
         save(async, remove, dict.keySet());
     }
 
@@ -722,21 +655,21 @@ public class DBObjectManager<T> {
      * Save the data of all the objects currently loaded
      */
     public void saveAll() {
-        saveFromMap(true, itemData, false);
+        saveFromMap(true, futureData, false);
     }
 
     /**
      * Save the data of all the objects currently loaded and remove the objects that were successfully saved
      */
     public void saveAndRemoveAll() {
-        saveFromMap(true, itemData, true);
+        saveFromMap(true, futureData, true);
     }
 
     /**
      * Save the data of all the objects currently loaded and remove the objects that were successfully saved without tasks (may cause lots of lag, for onDisable only)
      */
     public void saveAndRemoveAllSync() {
-        saveFromMap(false, itemData, true);
+        saveFromMap(false, futureData, true);
     }
 
     /**

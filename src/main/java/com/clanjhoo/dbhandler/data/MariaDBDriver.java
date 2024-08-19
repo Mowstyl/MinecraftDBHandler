@@ -1,8 +1,9 @@
 package com.clanjhoo.dbhandler.data;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Consumer;
-import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
@@ -13,9 +14,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 class MariaDBDriver<T> implements DatabaseDriver<T> {
-    private final String host, database, username, password, prefix;
-    private final int port;
     private final Logger logger;
+    private final HikariConfig config;
+    private final HikariDataSource dataSource;
+    private final String prefix;
     private final DBObjectManager<T> manager;
 
     /**
@@ -31,54 +33,21 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
      * @see DBObjectManager#DBObjectManager(Class clazz, Consumer afterTask, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
      */
     MariaDBDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String host, int port, @NotNull String database, @NotNull String username, @NotNull String password, @NotNull String prefix) {
-        new org.mariadb.jdbc.Driver();
         this.logger = plugin.getLogger();
-        this.host = host;
-        this.port = port;
-        this.database = database;
-        this.username = username;
-        this.password = password;
         this.prefix = prefix;
         this.manager = manager;
-    }
-
-    // DO NOT CALL DIRECTLY, USE getConnection instead
-    private static Connection openConnection(String host, int port, String database, String username, String password) throws SQLException {
-        new org.mariadb.jdbc.Driver();
-        return DriverManager.getConnection("jdbc:mysql://" + host + ":" + port + "/" + database, username, password);
-    }
-
-    private Connection getConnection() {
-        Connection connection;
-        try {
-            connection = openConnection(this.host, this.port, this.database, this.username, this.password);
-        }
-        catch (SQLException e) {
-            logger.log(Level.INFO, "Could NOT connect to MariaDB!");
-            e.printStackTrace();
-            return null;
-        }
-
-        try (PreparedStatement stmt = connection.prepareStatement("SELECT 1")) {
-            stmt.execute();
-        }
-        catch (SQLException e) {
-            logger.log(Level.INFO, "MySQL SELECT 1 failed. Reconnecting");
-            try {
-                connection = openConnection(this.host, this.port, this.database, this.username, this.password);
-            }
-            catch (SQLException e1) {
-                logger.log(Level.WARNING, "Couldn't reconnect to MySQL!");
-                e1.printStackTrace();
-                return null;
-            }
-        }
-
-        return connection;
+        this.config = new HikariConfig();
+        this.config.setJdbcUrl("jdbc:mysql://" + host + ":" + port + "/" + database);
+        this.config.setUsername(username);
+        this.config.setPassword(password);
+        this.config.addDataSourceProperty("cachePrepStmts", "true");
+        this.config.addDataSourceProperty("prepStmtCacheSize", "250");
+        this.config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        this.dataSource = new HikariDataSource(config);
     }
 
     // DO NOT CALL DIRECTLY
-    private PreparedStatement prepareStatement(@NotNull Connection conn, @Language("sql") String query, Object... vars) {
+    private PreparedStatement prepareStatement(@NotNull Connection conn, final String query, Object... vars) {
         try {
             PreparedStatement ps = conn.prepareStatement(query);
 
@@ -121,7 +90,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         return null;
     }
 
-    private boolean execute(@NotNull Connection connection, @Language("sql") final String query, final Object... vars) throws SQLException {
+    private boolean execute(@NotNull Connection connection, final String query, final Object... vars) throws SQLException {
         SQLException ex;
         try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
             assert ps != null;
@@ -136,8 +105,8 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         throw ex;
     }
 
-    private boolean execute(@Language("sql") final String query, final Object... vars) throws SQLException {
-        Connection connection = getConnection();
+    private boolean execute(final String query, final Object... vars) throws SQLException {
+        Connection connection = dataSource.getConnection();
         if (connection == null) {
             logger.log(Level.WARNING, "Could not get the connection!");
             return false;
@@ -155,7 +124,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         return result;
     }
 
-    private <E> E query(@NotNull Connection connection, @Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
+    private <E> E query(@NotNull Connection connection, final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
         E result;
 
         try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
@@ -169,8 +138,8 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         return result;
     }
 
-    private <E> E query(@Language("sql") final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
-        Connection connection = getConnection();
+    private <E> E query(final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
+        Connection connection = dataSource.getConnection();
         if (connection == null) {
             logger.log(Level.WARNING, "Could not get the connection!");
             return null;
@@ -205,7 +174,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     @Override
     public boolean contains(@NotNull String table, @NotNull Serializable[] ids) throws SQLException {
         String condKey = getSQLConditionKey();
-        @Language("sql") String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1) s;";
+        String sqlQuery = "SELECT COUNT(*) FROM (SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1) s;";
         // logger.log(Level.INFO, "Exists?");
         return Boolean.TRUE.equals(query(sqlQuery, (rs) -> {
             boolean res = false;
@@ -230,7 +199,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         Arrays.sort(pKeyNames);
         String condKey = getSQLConditionKey();
         SQLException[] exception = new SQLException[]{null};
-        @Language("sql") String sqlQuery = "SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1;";
+        String sqlQuery = "SELECT * FROM `" + prefix + table + "` WHERE " + condKey + " LIMIT 1;";
         // logger.log(Level.INFO, "Load Query");
         Map<String, Serializable> data = new HashMap<>();
         query(sqlQuery, (rs) -> {
@@ -315,7 +284,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     private boolean saveData(Connection connection, @NotNull String table, @NotNull T item) throws ReflectiveOperationException {
-        @Language("sql") String sqlQuery = "INSERT INTO `" + prefix + table + "` (`";
+        String sqlQuery = "INSERT INTO `" + prefix + table + "` (`";
         String[] fields = manager.getTableData().getFields().toArray(new String[0]);
         sqlQuery += String.join("`, `", fields) + "`) VALUES (";
         sqlQuery += String.join(", ", Collections.nCopies(fields.length, "?")) + ") ON DUPLICATE KEY UPDATE `";
@@ -350,11 +319,14 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     @Override
     public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
         Map<List<Serializable>, Boolean> results = new HashMap<>();
-        if (items.size() == 0) {
+        if (items.isEmpty()) {
             return results;
         }
-        Connection connection = getConnection();
-        if (connection == null) {
+        Connection connection = null;
+        try {
+            connection = dataSource.getConnection();
+        }
+        catch (SQLException ex) {
             logger.log(Level.WARNING, "Could not get the connection!");
             return results;
         }
