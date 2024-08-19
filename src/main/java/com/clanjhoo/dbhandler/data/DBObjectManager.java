@@ -15,7 +15,6 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -586,13 +585,33 @@ public class DBObjectManager<T> {
         return driver.contains(tableData.getName(), concatenateArgs(key, keys).toArray(new Serializable[0]));
     }
 
+
+    /**
+     * Return if the specified object is already stored in the database
+     * @param item The item to delete
+     * @return Whether the item exists or not
+     */
+    public boolean delete(@NotNull T item) throws IOException, SQLException {
+        boolean res = false;
+        try {
+            res = driver.deleteData(tableData.getName(), item);
+        }
+        catch (Exception ex) {
+            logger.log(Level.SEVERE, "Could not save data on table " + tableData.getName() + "!");
+            ex.printStackTrace();
+        }
+        return res;
+    }
+
     private void rawSave(boolean delete, @NotNull List<T> items) {
         if (items.isEmpty()) {
             return;
         }
         try {
             if (saveCondition != null) {
+                List<T> toDelete = items.stream().filter((item) -> !saveCondition.test(item)).toList();
                 items = items.stream().filter(saveCondition).toList();
+                driver.deleteData(tableData.getName(), toDelete);
             }
             Map<List<Serializable>, Boolean> results = driver.saveData(tableData.getName(), items);
             if (delete) {

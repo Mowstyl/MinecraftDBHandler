@@ -90,6 +90,39 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         return null;
     }
 
+    private int update(@NotNull Connection connection, final String query, final Object... vars) throws SQLException {
+        SQLException ex;
+        try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
+            assert ps != null;
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            if (e.getErrorCode() == 1060) {
+                return -1;
+            }
+            ex = e;
+        }
+        throw ex;
+    }
+
+    private int update(final String query, final Object... vars) throws SQLException {
+        Connection connection = dataSource.getConnection();
+        if (connection == null) {
+            logger.log(Level.WARNING, "Could not get the connection!");
+            return -1;
+        }
+
+        int result = update(connection, query, vars);
+
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error closing connection");
+            e.printStackTrace();
+        }
+
+        return result;
+    }
+
     private boolean execute(@NotNull Connection connection, final String query, final Object... vars) throws SQLException {
         SQLException ex;
         try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
@@ -311,6 +344,30 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         return false;
     }
 
+    private boolean deleteData(Connection connection, @NotNull String table, @NotNull T item) throws ReflectiveOperationException {
+        String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
+        Arrays.sort(pKeyNames);
+        Serializable[] ids = new Serializable[pKeyNames.length];
+        for (int i = 0; i < pKeyNames.length; i++) {
+            ids[i] = manager.getValue(item, pKeyNames[i]);
+        }
+        String condKey = getSQLConditionKey();
+        String sqlQuery = "DELETE FROM `" + prefix + table + "` WHERE " + condKey + ";";
+        int res = -1;
+        try {
+            if (connection == null) {
+                res = update(sqlQuery, (Object[]) ids);
+            } else {
+                res = update(connection, sqlQuery, (Object[]) ids);
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "SQLException while deleting item from table " + table);
+            e.printStackTrace();
+        }
+
+        return res == 1;
+    }
+
     @Override
     public boolean saveData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException {
         return saveData(null, table, item);
@@ -338,6 +395,43 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
                 keys[i] = manager.getValue(item, keyNames[i]);
             }
             results.put(Arrays.asList(keys), saveData(connection, table, item));
+        }
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "Error while closing connection after saving item list");
+            e.printStackTrace();
+        }
+        return results;
+    }
+
+    @Override
+    public boolean deleteData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException {
+        return deleteData(null, table, item);
+    }
+
+    @Override
+    public Map<List<Serializable>, Boolean> deleteData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
+        Map<List<Serializable>, Boolean> results = new HashMap<>();
+        if (items.isEmpty()) {
+            return results;
+        }
+        Connection connection = null;
+        try {
+            connection = dataSource.getConnection();
+        }
+        catch (SQLException ex) {
+            logger.log(Level.WARNING, "Could not get the connection!");
+            return results;
+        }
+        String[] keyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
+        Arrays.sort(keyNames);
+        Serializable[] keys = new Serializable[keyNames.length];
+        for (T item : items) {
+            for (int i = 0; i < keyNames.length; i++) {
+                keys[i] = manager.getValue(item, keyNames[i]);
+            }
+            results.put(Arrays.asList(keys), deleteData(connection, table, item));
         }
         try {
             connection.close();

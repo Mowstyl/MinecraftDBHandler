@@ -37,11 +37,7 @@ class JSONDriver<T> implements DatabaseDriver<T> {
         this.manager = manager;
     }
 
-    @Override
-    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) {
-        if (!filePattern.matcher(table).matches()) {
-            throw new IllegalArgumentException("Invalid table name");
-        }
+    private static String getId(@NotNull Serializable[] ids) {
         String[] strIds = new String[ids.length];
         for (int i = 0; i < ids.length; i++) {
             strIds[i] = ids[i].toString();
@@ -50,6 +46,15 @@ class JSONDriver<T> implements DatabaseDriver<T> {
         if (!filePattern.matcher(id).matches()) {
             throw new IllegalArgumentException("Invalid identifier");
         }
+        return id;
+    }
+
+    @Override
+    public boolean contains(@NotNull String table, @NotNull Serializable[] ids) {
+        if (!filePattern.matcher(table).matches()) {
+            throw new IllegalArgumentException("Invalid table name");
+        }
+        String id = getId(ids);
         File dataFile = new File(storage, table + "/" + id + ".json");
         return dataFile.exists() && dataFile.isFile();
     }
@@ -59,14 +64,7 @@ class JSONDriver<T> implements DatabaseDriver<T> {
         if (!filePattern.matcher(table).matches()) {
             throw new IllegalArgumentException("Invalid table name");
         }
-        String[] strIds = new String[ids.length];
-        for (int i = 0; i < ids.length; i++) {
-            strIds[i] = ids[i].toString();
-        }
-        String id = String.join("_", strIds);
-        if (!filePattern.matcher(id).matches()) {
-            throw new IllegalArgumentException("Invalid identifier");
-        }
+        String id = getId(ids);
         File tableFolder = new File(storage, table);
         File dataFile = new File(tableFolder,  id + ".json");
         T dbObject;
@@ -127,7 +125,11 @@ class JSONDriver<T> implements DatabaseDriver<T> {
             pKeyVals[i] = manager.getValue(item, primaryKeys[i]).toString();
         }
 
-        return String.join("_", pKeyVals);
+        String id =  String.join("_", pKeyVals);
+        if (!filePattern.matcher(id).matches()) {
+            throw new IllegalArgumentException("Invalid identifier");
+        }
+        return id;
     }
 
     @Override
@@ -136,9 +138,6 @@ class JSONDriver<T> implements DatabaseDriver<T> {
             throw new IllegalArgumentException("Invalid table name");
         }
         String id = getPrimaryKeyConcat(item);
-        if (!filePattern.matcher(id).matches()) {
-            throw new IllegalArgumentException("Invalid identifier");
-        }
         File dataFile = new File(storage, table + "/" + id + ".json");
         Gson gson = new Gson();
         String serializedData = gson.toJson(manager.toMap(item));
@@ -156,7 +155,7 @@ class JSONDriver<T> implements DatabaseDriver<T> {
     @Override
     public Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
         Map<List<Serializable>, Boolean> results = new HashMap<>();
-        if (items.size() == 0) {
+        if (items.isEmpty()) {
             return results;
         }
         String[] keyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
@@ -167,6 +166,34 @@ class JSONDriver<T> implements DatabaseDriver<T> {
                 keys[i] = manager.getValue(item, keyNames[i]);
             }
             results.put(Arrays.asList(keys), saveData(table, item));
+        }
+        return results;
+    }
+
+    @Override
+    public boolean deleteData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException {
+        if (!filePattern.matcher(table).matches()) {
+            throw new IllegalArgumentException("Invalid table name");
+        }
+        String id = getPrimaryKeyConcat(item);
+        File dataFile = new File(storage, table + "/" + id + ".json");
+        return !dataFile.exists() || dataFile.delete();
+    }
+
+    @Override
+    public Map<List<Serializable>, Boolean> deleteData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException {
+        Map<List<Serializable>, Boolean> results = new HashMap<>();
+        if (items.isEmpty()) {
+            return results;
+        }
+        String[] keyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
+        Arrays.sort(keyNames);
+        Serializable[] keys = new Serializable[keyNames.length];
+        for (T item : items) {
+            for (int i = 0; i < keyNames.length; i++) {
+                keys[i] = manager.getValue(item, keyNames[i]);
+            }
+            results.put(Arrays.asList(keys), deleteData(table, item));
         }
         return results;
     }

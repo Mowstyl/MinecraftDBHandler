@@ -54,8 +54,24 @@ interface DatabaseDriver<T> {
     /**
      * @param table name of the table to create
      * @param items database objects to store
-     * @return true if all the data has been saved, false if any of the items failed to be saved
+     * @return key -> value, where value is true if the data associated with the key could be saved
      * @throws IllegalArgumentException if the specified table name or identifier could not be used
      */
     Map<List<Serializable>, Boolean> saveData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException;
+
+    /**
+     * @param table name of the table to create
+     * @param item database object to store
+     * @return true if the data has been deleted, false otherwise
+     * @throws IllegalArgumentException if the specified table name or identifier could not be used
+     */
+    boolean deleteData(@NotNull String table, @NotNull T item) throws ReflectiveOperationException;
+
+    /**
+     * @param table name of the table to create
+     * @param items database objects to store
+     * @return key -> value, where value is true if the data associated with the key could be removed
+     * @throws IllegalArgumentException if the specified table name or identifier could not be used
+     */
+    Map<List<Serializable>, Boolean> deleteData(@NotNull String table, @NotNull List<T> items) throws ReflectiveOperationException;
 }
