@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.clanjhoo"
-version = "3.0.0-SNAPSHOT"
+version = "3.0.0"
 description = "DB Framework for bukkit plugins"
 
 val getGitHash: String by lazy {
