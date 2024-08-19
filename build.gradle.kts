@@ -72,13 +72,13 @@ tasks.withType<Javadoc>() {
     options.encoding = "UTF-8"
 }
 
-tasks.processResources {
-    filesMatching("**/plugin.yml") {
-        expand( project.properties )
-    }
-}
-
 tasks {
+    processResources {
+        filesMatching("**/plugin.yml") {
+            expand( project.properties )
+        }
+    }
+
     shadowJar {
         archiveFileName.set("${rootProject.name}-${version}.jar".replace("SNAPSHOT", getGitHash))
         //relocate("org.mariadb.jdbc", "org.mariadb.${rootProject.name.lowercase()}.jdbc")

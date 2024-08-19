@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 public class DBObjectManager<T> {
     private final KeyedLock locks = new KeyedLock();
     private final Map<List<Serializable>, Long> lastChecked = new ConcurrentHashMap<>();
+    private final Map<List<Serializable>, T> itemData = new ConcurrentHashMap<>();
     private final Map<List<Serializable>, CompletableFuture<T>> futureData = new ConcurrentHashMap<>();
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
@@ -475,6 +476,28 @@ public class DBObjectManager<T> {
         return data;
     }
 
+    private @NotNull CompletableFuture<T> createFuture(@NotNull List<Serializable> keys) {
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
+            T item = itemData.get(keys);
+            if (item == null) {
+                try {
+                    item = getDataBlocking(keys);
+                    itemData.put(keys, item);
+                } catch (IOException | SQLException ex) {
+                    logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
+                    throw new RuntimeException(ex);
+                } catch (ReflectiveOperationException ex) {
+                    logger.log(Level.WARNING, "There was an error while accessing a field");
+                    throw new RuntimeException(ex);
+                }
+            }
+            return item;
+        });
+        // and store it
+        futureData.put(keys, future);
+        return future;
+    }
+
     /**
      * Try to get the specified data with the defined database driver and pass it to a consumer if found
      * @param keys List of values the primary keys of the queried object has
@@ -491,19 +514,7 @@ public class DBObjectManager<T> {
             // If we don't have a future or the future went wrong
             if (future == null || future.isCompletedExceptionally()) {
                 // we create a new future
-                future = CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return getDataBlocking(keys);
-                    } catch (IOException | SQLException ex) {
-                        logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
-                        throw new RuntimeException(ex);
-                    } catch (ReflectiveOperationException ex) {
-                        logger.log(Level.WARNING, "There was an error while accessing a field");
-                        throw new RuntimeException(ex);
-                    }
-                });
-                // and store it
-                futureData.put(keys, future);
+                future = createFuture(keys);
             }
         }
         finally {
@@ -531,15 +542,23 @@ public class DBObjectManager<T> {
      * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
      */
     private @NotNull T tryGetDataNow(@NotNull List<Serializable> keys) throws AssertionError {
-        CompletableFuture<T> future = getFutureData(keys);
+        lastChecked.put(keys, System.currentTimeMillis());
         T item;
-        if (!future.isDone()) {
-            throw new AssertionError("The data has not been loaded yet!");
-        }
+        Lock lock = locks.getLock(keys);
         try {
-            item = future.get();
-        } catch (InterruptedException | ExecutionException ex) {
-            throw new RuntimeException(ex);
+            lock.lock();
+            item = itemData.get(keys);
+            if (item == null) {
+                CompletableFuture<T> future = futureData.get(keys);
+                if (future == null || future.isCompletedExceptionally()) {
+                    // we create a new future
+                    createFuture(keys);
+                }
+                throw new AssertionError("The data is still loading");
+            }
+        }
+        finally {
+            lock.unlock();
         }
         return item;
     }
@@ -579,7 +598,9 @@ public class DBObjectManager<T> {
             if (delete) {
                 for (List<Serializable> result : results.keySet()) {
                     if (results.get(result)) {
-                        futureData.remove(result);
+                        CompletableFuture<T> future = futureData.remove(result);
+                        future.cancel(true);
+                        itemData.remove(result);
                         lastChecked.remove(result);
                     }
                     else {
@@ -654,7 +675,7 @@ public class DBObjectManager<T> {
         this.save(true, keyList);
     }
 
-    private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, CompletableFuture<T>> dict, boolean remove) {
+    private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, T> dict, boolean remove) {
         save(async, remove, dict.keySet());
     }
 
@@ -662,21 +683,21 @@ public class DBObjectManager<T> {
      * Save the data of all the objects currently loaded
      */
     public void saveAll() {
-        saveFromMap(true, futureData, false);
+        saveFromMap(true, itemData, false);
     }
 
     /**
      * Save the data of all the objects currently loaded and remove the objects that were successfully saved
      */
     public void saveAndRemoveAll() {
-        saveFromMap(true, futureData, true);
+        saveFromMap(true, itemData, true);
     }
 
     /**
      * Save the data of all the objects currently loaded and remove the objects that were successfully saved without tasks (may cause lots of lag, for onDisable only)
      */
     public void saveAndRemoveAllSync() {
-        saveFromMap(false, futureData, true);
+        saveFromMap(false, itemData, true);
     }
 
     /**
