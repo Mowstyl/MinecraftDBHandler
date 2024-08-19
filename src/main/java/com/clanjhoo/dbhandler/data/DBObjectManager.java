@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -32,6 +33,7 @@ public class DBObjectManager<T> {
     private final long inactiveTime;
     private final Class<T> meself;
     private final Consumer<T> afterTask;
+    private final Predicate<T> saveCondition;
     private TableData tableData;
     private boolean dataInitialized;
     private Map<String, FieldData> fieldDataList;
@@ -150,7 +152,7 @@ public class DBObjectManager<T> {
                     }
                     DataField dann = f.getAnnotation(DataField.class);
                     if (dann != null) {
-                        if (dann.name().length() > 0)
+                        if (!dann.name().isEmpty())
                             name = dann.name();
                         if (!dann.value().isEmpty() || dann.enforceValue())
                             defVal = stringToSerializable(type, dann.value());
@@ -248,6 +250,7 @@ public class DBObjectManager<T> {
      * Instantiates a new DBObjectManager object
      * @param clazz The class of the object to manage
      * @param afterTask A consumer that takes an item that has just been loaded from database. Can be null
+     * @param saveCondition A predicate that determines if an item has to be stored in the database or deleted. null -> save all
      * @param plugin The plugin that has created the object
      * @param inactiveTime Time in seconds to remove inactive items from the manager
      * @param type Type of the storage driver
@@ -255,11 +258,12 @@ public class DBObjectManager<T> {
      * @see JSONDriver#JSONDriver(JavaPlugin plugin, DBObjectManager manager, String storageFolderName)
      * @see MariaDBDriver#MariaDBDriver(JavaPlugin plugin, DBObjectManager manager, String host, int port, String database, String username, String password, String prefix)
      */
-    public DBObjectManager(@NotNull Class<T> clazz, @Nullable Consumer<T> afterTask, @NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
+    public DBObjectManager(@NotNull Class<T> clazz, @Nullable Consumer<T> afterTask, @Nullable Predicate<T> saveCondition, @NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.meself = clazz;
         this.afterTask = afterTask;
+        this.saveCondition = saveCondition;
 
         initializeTableData();
 
@@ -528,7 +532,7 @@ public class DBObjectManager<T> {
      */
     private @NotNull T tryGetDataNow(@NotNull List<Serializable> keys) throws AssertionError {
         CompletableFuture<T> future = getFutureData(keys);
-        T item = null;
+        T item;
         if (!future.isDone()) {
             throw new AssertionError("The data has not been loaded yet!");
         }
@@ -568,6 +572,9 @@ public class DBObjectManager<T> {
             return;
         }
         try {
+            if (saveCondition != null) {
+                items = items.stream().filter(saveCondition).toList();
+            }
             Map<List<Serializable>, Boolean> results = driver.saveData(tableData.getName(), items);
             if (delete) {
                 for (List<Serializable> result : results.keySet()) {

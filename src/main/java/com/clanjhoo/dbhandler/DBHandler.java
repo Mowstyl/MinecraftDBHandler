@@ -21,14 +21,20 @@ public final class DBHandler extends JavaPlugin {
     public void onEnable() {
         // Plugin startup logic
         try {
-            myEntityManager = new DBObjectManager<>(SampleEntity.class, null, this, null, StorageType.JSON, "store");
+            myEntityManager = new DBObjectManager<>(SampleEntity.class,
+                    null,
+                    (se) -> se.bolognesa == 3.2 && se.ravioliRavioli == 0,
+                    this, null, StorageType.JSON, "store");
             myEntityManager.initialize();
             // this.getLogger().log(Level.INFO, myEntityManager.getTableData().getCreateString(null));
-            myEntityManager.getFutureData(UUID.fromString("c38ee158-c001-49b6-91ef-af447b11d742")).thenAccept((me) -> {
-                this.getLogger().log(Level.INFO, me.id + " " + me.bolognesa + " " + me.extra);
-            });/*.exceptionally((ex) -> {
-                this.getLogger().log(Level.WARNING, "WA");
-            });*/
+            myEntityManager.getFutureData(UUID.fromString("c38ee158-c001-49b6-91ef-af447b11d742"))
+                    .exceptionally((ex) -> {
+                        this.getLogger().log(Level.WARNING, "WA");
+                        return null;
+                    })
+                    .thenAccept((me) -> {
+                        this.getLogger().log(Level.INFO, me.id + " " + me.bolognesa + " " + me.extra);
+                    });
         }
         catch (Exception ex) {
             ex.printStackTrace();
