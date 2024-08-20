@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.clanjhoo"
-version = "3.0.0-SNAPSHOT"
+version = "3.0.1"
 description = "DB Framework for bukkit plugins"
 
 val getGitHash: String by lazy {
@@ -32,12 +32,14 @@ repositories {
             includeGroup("com.gradleup")
         }
     }
-    maven("https://papermc.io/repo/repository/maven-public/") {
+    maven {
+        url = uri("https://papermc.io/repo/repository/maven-public/")
         content {
             includeGroup("io.papermc.paper")
         }
     }
-    maven("https://repo.aikar.co/content/groups/aikar/") {
+    maven {
+        url = uri("https://repo.aikar.co/content/groups/aikar/")
         content {
             includeGroup("net.md-5")
         }
@@ -51,11 +53,6 @@ dependencies {
     implementation(libs.zaxxer.hikariCP) {
         isTransitive = false
     }
-    /*
-    implementation(libs.mariadb.client) {
-        isTransitive = false
-    }
-    */
 }
 
 publishing {
@@ -81,8 +78,6 @@ tasks {
 
     shadowJar {
         archiveFileName.set("${rootProject.name}-${version}.jar".replace("SNAPSHOT", getGitHash))
-        //relocate("org.mariadb.jdbc", "org.mariadb.${rootProject.name.lowercase()}.jdbc")
-        //include("org/mariadb/**")
         relocate("com.zaxxer.hikari", "com.zaxxer.${rootProject.name.lowercase()}.hikari")
     }
 }

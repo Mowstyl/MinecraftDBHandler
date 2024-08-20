@@ -618,7 +618,8 @@ public class DBObjectManager<T> {
                 for (List<Serializable> result : results.keySet()) {
                     if (results.get(result)) {
                         CompletableFuture<T> future = futureData.remove(result);
-                        future.cancel(true);
+                        if (future != null)
+                            future.cancel(true);
                         itemData.remove(result);
                         lastChecked.remove(result);
                     }
