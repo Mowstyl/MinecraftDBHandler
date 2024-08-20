@@ -144,7 +144,7 @@ public class TableData {
     private String getCreateField(String name) {
         FieldData field = data.get(name);
         String fieldCreate = "`" + name + "` " + field.type;
-        if (field.canBeNull) {
+        if (!field.canBeNull) {
             fieldCreate += " NOT NULL";
         }
         return fieldCreate;

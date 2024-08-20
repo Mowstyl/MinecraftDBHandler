@@ -185,7 +185,7 @@ public class DBObjectManager<T> {
                 fieldType = sqlTypeFromType(fd.field.getType());
             }
             if (!dataInitialized) {
-                tableData.addField(n, fieldType, fd.nullable);
+                tableData.addField(n, fieldType, fd.nullable && !fd.isPrimary);
             }
         });
 

@@ -30,7 +30,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
      * @param username The user of the database the driver will use. Must be passed in the config array of the DBObjectManager constructor
      * @param password The password of the specified user. Must be passed in the config array of the DBObjectManager constructor
      * @param prefix The prefix to add to the name of all tables. Must be passed in the config array of the DBObjectManager constructor
-     * @see DBObjectManager#DBObjectManager(Class clazz, Consumer afterTask, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
+     * @see DBObjectManager#DBObjectManager(Class clazz, Consumer afterTask, Predicate saveCondition, JavaPlugin plugin, Integer inactiveTime, StorageType type, Object... config)
      */
     MariaDBDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String host, int port, @NotNull String database, @NotNull String username, @NotNull String password, @NotNull String prefix) {
         this.logger = plugin.getLogger();
@@ -269,7 +269,8 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
                             item = rs.getString(field);
                         }
                         else if (UUID.class.isAssignableFrom(type)) {
-                            item = UUID.fromString(rs.getString(field));
+                            String rawUUID = rs.getString(field);
+                            item = rawUUID != null ? UUID.fromString(rawUUID) : null;
                         }
                         else{
                             item = (Serializable) rs.getObject(field);
