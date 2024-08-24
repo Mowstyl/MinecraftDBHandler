@@ -5,6 +5,9 @@ import com.clanjhoo.dbhandler.annotations.PrimaryKey;
 
 import java.util.UUID;
 
+/**
+ * A sample class that illustrates how to store the currency a player has
+ */
 @Entity
 public class SampleEconomyPlayer {
     @PrimaryKey

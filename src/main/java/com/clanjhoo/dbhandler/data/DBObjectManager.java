@@ -1,10 +1,11 @@
 package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.annotations.*;
-import com.clanjhoo.dbhandler.utils.KeyedLock;
+import com.clanjhoo.dbhandler.events.LoadedDataEvent;
 import com.clanjhoo.dbhandler.utils.Pair;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,26 +14,28 @@ import java.io.Serializable;
 import java.lang.reflect.*;
 import java.sql.SQLException;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.function.Consumer;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+
+/**
+ * Instances of this class handle all input / output from the specified database
+ * @param <T> the type of the objects that will be handled by this manager
+ */
 public class DBObjectManager<T> {
-    private final KeyedLock locks = new KeyedLock();
     private final Map<List<Serializable>, Long> lastChecked = new ConcurrentHashMap<>();
     private final Map<List<Serializable>, T> itemData = new ConcurrentHashMap<>();
-    private final Map<List<Serializable>, CompletableFuture<T>> futureData = new ConcurrentHashMap<>();
+    private final Map<List<Serializable>, BukkitTask> loadTasks = new ConcurrentHashMap<>();
     private final DatabaseDriver<T> driver;
     private final JavaPlugin plugin;
     private final Logger logger;
     private final long inactiveTime;
     private final Class<T> meself;
-    private final Consumer<T> afterTask;
+    private final BiFunction<T, Exception, ? extends LoadedDataEvent<T>> eventFactory;
     private final Predicate<T> saveCondition;
     private TableData tableData;
     private boolean dataInitialized;
@@ -249,32 +252,37 @@ public class DBObjectManager<T> {
     /**
      * Instantiates a new DBObjectManager object
      * @param clazz The class of the object to manage
-     * @param afterTask A consumer that takes an item that has just been loaded from database. Can be null
-     * @param saveCondition A predicate that determines if an item has to be stored in the database or deleted. null -> save all
      * @param plugin The plugin that has created the object
-     * @param inactiveTime Time in seconds to remove inactive items from the manager
      * @param type Type of the storage driver
+     * @param eventFactory A supplier that returns the event that will be fired whenever the data has been successfully loaded
+     * @param saveCondition A predicate that determines if an item has to be stored in the database or deleted. null -> save all
+     * @param inactiveTime Time in milliseconds to remove inactive items from the manager. A negative number means never inactive
      * @param config Any config options needed by the selected storage driver type
      * @see JSONDriver#JSONDriver(JavaPlugin plugin, DBObjectManager manager, String storageFolderName)
      * @see MariaDBDriver#MariaDBDriver(JavaPlugin plugin, DBObjectManager manager, String host, int port, String database, String username, String password, String prefix)
+     * @throws IOException if there was an error while creating the table / folder
+     * @throws IllegalArgumentException if the chosen storage type has not yet been implemented
      */
-    public DBObjectManager(@NotNull Class<T> clazz, @Nullable Consumer<T> afterTask, @Nullable Predicate<T> saveCondition, @NotNull JavaPlugin plugin, Integer inactiveTime, @NotNull StorageType type, Object... config) throws IOException {
+    public DBObjectManager(@NotNull Class<T> clazz,
+                           @NotNull JavaPlugin plugin,
+                           @NotNull StorageType type,
+                           @Nullable BiFunction<T, Exception, ? extends LoadedDataEvent<T>> eventFactory,
+                           @Nullable Predicate<T> saveCondition,
+                           int inactiveTime,
+                           Object... config) throws IOException {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.meself = clazz;
-        this.afterTask = afterTask;
+        this.eventFactory = eventFactory;
         this.saveCondition = saveCondition;
 
         initializeTableData();
 
-        if (inactiveTime == null) {
-            this.inactiveTime = 5 * 60 * 1000;  // 5 minutes inactive
-        }
-        else if (inactiveTime < 0) {
+        if (inactiveTime < 0) {
             this.inactiveTime = Long.MAX_VALUE;
         }
         else {
-            this.inactiveTime = inactiveTime * 1000;
+            this.inactiveTime = inactiveTime;
         }
 
         switch(type) {
@@ -308,7 +316,13 @@ public class DBObjectManager<T> {
         createTable();
     }
 
-    protected @NotNull T getDefault() throws ReflectiveOperationException {
+    /**
+     * Instantiates a default object of the handled type T
+     * @return the object with default values
+     * @throws ReflectiveOperationException if there was an error while modifying any field of the object
+     */
+    @NotNull
+    protected T getDefault() throws ReflectiveOperationException {
         T def = meself.getDeclaredConstructor().newInstance();
         for (FieldData fd : fieldDataList.values()) {
             if (fd.field.isAnnotationPresent(DataField.class)) {
@@ -321,7 +335,16 @@ public class DBObjectManager<T> {
         return def;
     }
 
-    protected @NotNull T getInstance(@NotNull Map<String, Serializable> data, boolean strict) throws ReflectiveOperationException {
+    /**
+     * Instantiates an object of the default type with the data contained in the data map
+     * @param data a map which maps the name of a field with the data to put in said field
+     * @param strict whether to raise an exception if there is no data for every field or not and leave them with default values
+     * @return the new instance of the object, initialized with the data in the data map. If there is no data for any field, this will return a default object of type T.
+     * @throws ReflectiveOperationException if there was an error while modifying any field of the object
+     * @throws IllegalArgumentException if strict is true and there was at least one field not contained in the data map
+     */
+    @NotNull
+    protected T getInstance(@NotNull Map<String, Serializable> data, boolean strict) throws ReflectiveOperationException {
         T def = meself.getDeclaredConstructor().newInstance();
         if (strict) {
             for (String name : data.keySet()) {
@@ -343,10 +366,22 @@ public class DBObjectManager<T> {
         return def;
     }
 
+    /**
+     * Returns a TableData object with information about the table in which items of type T will be stored
+     * @return the TableData object
+     */
     protected @NotNull TableData getTableData() {
         return tableData;
     }
 
+    /**
+     * Sets the value of the specified field in the given object
+     * @param obj the object we want to modify
+     * @param field the name of the field that we want to modify
+     * @param value the value we want to assign
+     * @throws ReflectiveOperationException if there was an error while accessing the field
+     * @throws IllegalArgumentException if the specified field does not exist in the table
+     */
     protected void setValue(T obj, String field, Serializable value) throws ReflectiveOperationException {
         FieldData fd = fieldDataList.get(field);
         if (fd == null) {
@@ -411,6 +446,14 @@ public class DBObjectManager<T> {
         }
     }
 
+    /**
+     * Returns the value of the specified field in the given object
+     * @param obj the object containing the data
+     * @param field the name of the field which contains the data
+     * @return the data inside of the field of the object
+     * @throws ReflectiveOperationException if there was an error while accessing the field
+     * @throws IllegalArgumentException if the specified field does not exist in the table
+     */
     protected Serializable getValue(T obj, String field) throws ReflectiveOperationException {
         FieldData fd = fieldDataList.get(field);
         if (fd == null) {
@@ -431,12 +474,18 @@ public class DBObjectManager<T> {
         return val;
     }
 
-    protected Class<Serializable> getType(String field) {
+    /**
+     * Returns the class of the specified field
+     * @param field the name of the field in the handled class
+     * @return the class of the field
+     * @throws ClassCastException if the field is not of a serializable class
+     */
+    protected Class<? extends Serializable> getType(String field) {
         FieldData fd = fieldDataList.get(field);
         if (fd == null) {
             throw new IllegalArgumentException("The field " + field + " is not defined for the table " + tableData.getName());
         }
-        return (Class<Serializable>) fd.field.getType();
+        return (Class<? extends Serializable>) fd.field.getType();
     }
 
     protected Map<String, Serializable> toMap(T obj) throws ReflectiveOperationException {
@@ -449,7 +498,10 @@ public class DBObjectManager<T> {
     }
 
     @SafeVarargs
-    private final <K> List<K> concatenateArgs(K head, K... tail) {
+    @NotNull
+    private <K> List<K> concatenateArgs(K head, @Nullable K... tail) {
+        if (tail == null)
+            return List.of(head);
         List<K> result = new ArrayList<>(tail.length + 1);
         result.add(head);
         result.addAll(Arrays.asList(tail));
@@ -467,110 +519,64 @@ public class DBObjectManager<T> {
         }
     }
 
-    private @NotNull T getDataBlocking(@NotNull List<Serializable> keys) throws ReflectiveOperationException, SQLException, IOException {
-        T data = driver.loadData(tableData.getName(), keys.toArray(new Serializable[0]));
-        if (afterTask != null) {
-            afterTask.accept(data);
-        }
-        return data;
-    }
+    public void stopRunningTasks() {
+        for (BukkitTask task : loadTasks.values()) {
 
-    private @NotNull CompletableFuture<T> createFuture(@NotNull List<Serializable> keys) {
-        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
-            T item = itemData.get(keys);
-            if (item == null) {
-                try {
-                    item = getDataBlocking(keys);
-                    itemData.put(keys, item);
-                } catch (IOException | SQLException ex) {
-                    logger.log(Level.WARNING, "The driver returned an error while retrieving an item from the database");
-                    throw new RuntimeException(ex);
-                } catch (ReflectiveOperationException ex) {
-                    logger.log(Level.WARNING, "There was an error while accessing a field");
-                    throw new RuntimeException(ex);
-                }
-            }
-            return item;
-        });
-        // and store it
-        futureData.put(keys, future);
-        return future;
+        }
     }
 
     /**
-     * Try to get the specified data with the defined database driver and pass it to a consumer if found
+     * Loads the item associated with the specified primary key asynchronously. Then fires an event indicating the result
+     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
+     * @return The load data bukkit asynchronous task
+     */
+    public @NotNull BukkitTask loadData(@NotNull Serializable key, @Nullable Serializable... keys) {
+        return loadData(concatenateArgs(key, keys));
+    }
+
+    /**
+     * Loads the item associated with the specified primary key asynchronously. Then fires an event indicating the result
      * @param keys List of values the primary keys of the queried object has
-     * @return Whether the success method could be executed (or plan to execute it on a later task) or not
+     * @return The load data bukkit asynchronous task
      */
-    private @NotNull CompletableFuture<T> getFutureData(@NotNull List<Serializable> keys) {
-        lastChecked.put(keys, System.currentTimeMillis());
-        CompletableFuture<T> future;
-        Lock lock = locks.getLock(keys);
-        try {
-            // Only one process at a time from here on.
-            lock.lock();
-            future = futureData.get(keys);
-            // If we don't have a future or the future went wrong
-            if (future == null || future.isCompletedExceptionally()) {
-                // we create a new future
-                future = createFuture(keys);
-            }
-        }
-        finally {
-            // Always release lock
-            lock.unlock();
-        }
-        return future;
+    private @NotNull BukkitTask loadData(@NotNull List<Serializable> keys) {
+        return loadTasks.computeIfAbsent(keys,
+                (k) -> Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    T data = null;
+                    Exception throwable = null;
+                    try {
+                        data = driver.loadData(tableData.getName(), k.toArray(new Serializable[0]));
+                    }
+                    catch (Exception ex) {
+                        throwable = ex;
+                    }
+                    loadTasks.remove(k);
+                    LoadedDataEvent<T> event = eventFactory.apply(data, throwable);
+                    Bukkit.getPluginManager().callEvent(event);
+                }));
     }
 
     /**
-     * Loads the item associated with the specified primary key on the main thread
-     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
-     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
-     * @return A future with the object associated with the key
-     */
-    public @NotNull CompletableFuture<T> getFutureData(@NotNull Serializable key, Serializable... keys) {
-        return getFutureData(concatenateArgs(key, keys));
-    }
-
-
-    /**
-     * Return the object associated with the specified primary key if it's already in memory. Otherwise raises an exception
+     * Return the object associated with the specified primary key if it's already in memory. Otherwise return null
      * @param keys The primary key
-     * @return The item associated with the key
-     * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
+     * @return The item associated with the key, null if it has not been loaded
      */
-    private @NotNull T tryGetDataNow(@NotNull List<Serializable> keys) throws AssertionError {
-        lastChecked.put(keys, System.currentTimeMillis());
-        T item;
-        Lock lock = locks.getLock(keys);
-        try {
-            lock.lock();
-            item = itemData.get(keys);
-            if (item == null) {
-                CompletableFuture<T> future = futureData.get(keys);
-                if (future == null || future.isCompletedExceptionally()) {
-                    // we create a new future
-                    createFuture(keys);
-                }
-                throw new AssertionError("The data is still loading");
-            }
-        }
-        finally {
-            lock.unlock();
-        }
-        return item;
+    private @Nullable T tryGetDataNow(@NotNull List<Serializable> keys) {
+        return itemData.computeIfAbsent(keys, (k) -> {
+            loadTasks.computeIfAbsent(k, this::loadData);
+            return null;
+        });
     }
 
 
     /**
-     * Return the object associated with the specified primary key if it's already in memory. Otherwise raises an exception
+     * Return the object associated with the specified primary key if it's already in memory. Otherwise return null
      * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
-     * @return The item associated with the key
-     * @throws AssertionError If the data couldn't be loaded on the main thread in this tick
+     * @return The item associated with the key, null if it has not been loaded
      */
-    public @NotNull T tryGetDataNow(@NotNull Serializable key, Serializable... keys) throws AssertionError {
+    public @Nullable T tryGetDataNow(@NotNull Serializable key, Serializable... keys) throws AssertionError {
         return tryGetDataNow(concatenateArgs(key, keys));
     }
 
@@ -580,6 +586,8 @@ public class DBObjectManager<T> {
      * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return Whether the item exists or not
+     * @throws SQLException if the selected StorageType uses an SQL database and there was an exception while querying it
+     * @throws IOException if the selected StorageType stores data using files and folders and there was an exception while accessing them
      */
     public boolean exists(@NotNull Serializable key, Serializable... keys) throws IOException, SQLException {
         return driver.contains(tableData.getName(), concatenateArgs(key, keys).toArray(new Serializable[0]));
@@ -590,6 +598,8 @@ public class DBObjectManager<T> {
      * Delete an item from the database
      * @param item The item to delete
      * @return Whether the item has been deleted or not
+     * @throws SQLException if the selected StorageType uses an SQL database and there was an exception while querying it
+     * @throws IOException if the selected StorageType stores data using files and folders and there was an exception while accessing them
      */
     public boolean delete(@NotNull T item) throws IOException, SQLException {
         boolean res = false;
@@ -617,9 +627,6 @@ public class DBObjectManager<T> {
             if (delete) {
                 for (List<Serializable> result : results.keySet()) {
                     if (results.get(result)) {
-                        CompletableFuture<T> future = futureData.remove(result);
-                        if (future != null)
-                            future.cancel(true);
                         itemData.remove(result);
                         lastChecked.remove(result);
                     }
@@ -678,7 +685,7 @@ public class DBObjectManager<T> {
 
     /**
      * Save the data of the object associated with the specified Primary Key
-     * @param key The primary key (if there is a composite primary key, this is the first alphabetically by their field names)
+     * @param key The primary key (if the primary key is composite, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
     public void save(@NotNull Serializable key, Serializable... keys) {
@@ -688,7 +695,8 @@ public class DBObjectManager<T> {
 
     /**
      * Save the data of the object associated with the specified Primary Key and remove it from memory if the save process was successful
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @param key The primary key (if the primary key is composite, this is the first alphabetically by their field names)
+     * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
     public void saveAndRemove(@NotNull Serializable key, Serializable... keys) {
         List<Serializable> keyList = concatenateArgs(key, keys);
@@ -699,38 +707,56 @@ public class DBObjectManager<T> {
         save(async, remove, dict.keySet());
     }
 
+    private void saveAll(boolean async, SaveOperation operation) {
+        if (inactiveTime < 0) {
+            if (operation == SaveOperation.SAVE_AND_REMOVE_INACTIVE)
+                return;
+            if (operation == SaveOperation.SAVE_ALL_AND_REMOVE_INACTIVE)
+                operation = SaveOperation.SAVE_ALL;
+        }
+        switch (operation) {
+            case SAVE_ALL -> saveFromMap(async, itemData, false);
+            case SAVE_ALL_AND_REMOVE_ALL -> saveFromMap(async, itemData, true);
+            case SAVE_AND_REMOVE_INACTIVE -> saveAndRemoveInactive(async, true);
+            case SAVE_ALL_AND_REMOVE_INACTIVE -> saveAndRemoveInactive(async, false);
+        }
+    }
+
     /**
      * Save the data of all the objects currently loaded
+     * @param operation a SaveOperation indicating the elements to save and the elements to remove
      */
-    public void saveAll() {
-        saveFromMap(true, itemData, false);
+    public void saveAll(SaveOperation operation) {
+        saveAll(true, operation);
     }
 
     /**
-     * Save the data of all the objects currently loaded and remove the objects that were successfully saved
+     * Save the data of all the objects currently loaded synchronously (may cause lag)
+     * @param operation a SaveOperation indicating the elements to save and the elements to remove
      */
-    public void saveAndRemoveAll() {
-        saveFromMap(true, itemData, true);
+    public void saveAllSync(SaveOperation operation) {
+        saveAll(false, operation);
     }
 
     /**
-     * Save the data of all the objects currently loaded and remove the objects that were successfully saved without tasks (may cause lots of lag, for onDisable only)
+     * Save the data of all the objects currently loaded and remove those that were successfully saved and have not been queried past its max inactive time
      */
-    public void saveAndRemoveAllSync() {
-        saveFromMap(false, itemData, true);
-    }
-
-    /**
-     * Save the data of all the objects currently loaded that have expired their max inactive time and remove those that were successfully saved
-     */
-    public void saveAndRemoveUnactive() {
+    private void saveAndRemoveInactive(boolean async, boolean onlySaveInactive) {
         long now = System.currentTimeMillis();
-        for (Map.Entry<List<Serializable>, Long> entry : lastChecked.entrySet()) {
-            List<Serializable> keys = entry.getKey();
-            long lastCheck = entry.getValue();
-            if (now - lastCheck >= inactiveTime) {
-                saveAndRemove(keys);
-            }
+        if (onlySaveInactive) {
+            List<List<Serializable>> toSave = lastChecked.entrySet().stream()
+                    .filter((e) -> now - e.getValue() >= inactiveTime)
+                    .map(Map.Entry::getKey)
+                    .toList();
+            save(async, true, toSave);
+        }
+        else {
+            Map<Boolean, List<List<Serializable>>> partitions =
+                    lastChecked.keySet().stream()
+                            .collect(Collectors.partitioningBy(
+                                    (e) -> now - lastChecked.get(e) >= inactiveTime));
+            save(async, true, partitions.get(true));
+            save(async, false, partitions.get(false));
         }
     }
 }

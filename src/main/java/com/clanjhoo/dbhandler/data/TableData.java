@@ -10,8 +10,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+
+/**
+ * A class used to store all the information related to the structure of a database table
+ */
 public class TableData {
-    private static Map<String, TableData> definedTables = new ConcurrentHashMap<>();
+    private final static Map<String, TableData> definedTables = new ConcurrentHashMap<>();
 
     private final String name;
     private Set<String> primaryKeys;
@@ -20,7 +24,13 @@ public class TableData {
     private final Map<String, Pair<String, TableData>> foreignKeys;
 
 
-    public static @NotNull TableData getTableData(String name) {
+    /**
+     * Returns the table with the given name. If it does not exist, the method will try to instantiate a new one
+     * @param name the name of the table
+     * @return the object containing table data
+     */
+    @NotNull
+    public static TableData getTableData(String name) {
         if (definedTables.containsKey(name)) {
             return definedTables.get(name);
         }
@@ -29,7 +39,13 @@ public class TableData {
         return table;
     }
 
-    public static @Nullable TableData findTableData(String name) {
+    /**
+     * Returns the table with the given name. If it does not exist, returns null
+     * @param name the name of the table
+     * @return the object containing table data or null if it does not exist
+     */
+    @Nullable
+    public static TableData findTableData(String name) {
         return definedTables.get(name);
     }
 
@@ -56,6 +72,10 @@ public class TableData {
         foreignKeys.put(thisField, new Pair<>(otherField, otherTable));
     }
 
+    /**
+     * Returns a map that maps fields with their associated field in another table
+     * @return the map containing the foreign keys
+     */
     public Map<String, Pair<String, TableData>> getForeignKeys() {
         return foreignKeys;
     }
@@ -72,7 +92,7 @@ public class TableData {
                 throw new IllegalArgumentException("Field already exists on this table");
             }
         }
-        FieldData field = data.put(name, new FieldData(type, canBeNull));
+        data.put(name, new FieldData(type, canBeNull));
     }
 
     /**
@@ -83,6 +103,10 @@ public class TableData {
         primaryKeys = getFieldSet(keys);
     }
 
+    /**
+     * Returns a set of existing fields marked as Primary Key
+     * @return the name of the primary key fields
+     */
     public Set<String> getPrimaryKeys() {
         return primaryKeys;
     }
@@ -95,6 +119,10 @@ public class TableData {
         uniqueKeys.add(getFieldSet(fields));
     }
 
+    /**
+     * Returns a list of all the sets of fields marked as unique
+     * @return the list of unique sets of fields
+     */
     public List<Set<String>> getUniques() {
         return uniqueKeys;
     }
@@ -110,14 +138,27 @@ public class TableData {
         return fields;
     }
 
+    /**
+     * Returns a set containing the names of the columns in this table
+     * @return the names of the columns
+     */
     public Set<String> getFields() {
         return data.keySet();
     }
 
+    /**
+     * Returns the name of the table, without any prefixes
+     * @return the name of the table
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns the SQL query used to create the table associated with this object
+     * @param prefix the prefix to prepend to the table name
+     * @return the SQL query
+     */
     public String getCreateString(String prefix) {
         if (prefix == null) {
             prefix = "";

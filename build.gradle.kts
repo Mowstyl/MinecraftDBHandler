@@ -1,14 +1,10 @@
 import java.io.ByteArrayOutputStream
 
 plugins {
-    java
-    `maven-publish`
+    `java-library`
     alias(libs.plugins.shadowPlugin)
+    alias(libs.plugins.generatePOMPlugin)
 }
-
-group = "com.clanjhoo"
-version = "3.0.1"
-description = "DB Framework for bukkit plugins"
 
 val getGitHash: String by lazy {
     val stdout = ByteArrayOutputStream()
@@ -17,6 +13,15 @@ val getGitHash: String by lazy {
         standardOutput = stdout
     }
     stdout.toString().trim()
+}
+
+group = "com.clanjhoo"
+version = "4.0.0-SNAPSHOT"//.replace("SNAPSHOT", getGitHash)
+description = "Framework for spigot that handles creating and accessing databases"
+
+ext.set("projectName", gradle.extra["projectName"].toString())
+maven.pom {
+    name = gradle.extra["projectName"].toString()
 }
 
 java {
@@ -30,6 +35,13 @@ repositories {
     gradlePluginPortal {
         content {
             includeGroup("com.gradleup")
+        }
+    }
+    maven {
+        url = uri("https://hub.spigotmc.org/nexus/content/repositories/snapshots/")
+        content {
+            includeGroup("org.bukkit")
+            includeGroup("org.spigotmc")
         }
     }
     maven {
@@ -49,23 +61,21 @@ repositories {
 }
 
 dependencies {
-    compileOnly(libs.papermc.paperAPI)
-    implementation(libs.zaxxer.hikariCP) {
+    // compileOnly(libs.papermc.paperapi)
+    compileOnly(libs.spigotmc.spigotapi)
+    compileOnly(libs.jetbrains.annotations) {
         isTransitive = false
     }
-}
-
-publishing {
-    publications.create<MavenPublication>("maven") {
-        from(components["java"])
+    implementation(libs.zaxxer.hikariCP) {
+        isTransitive = true
     }
 }
 
-tasks.withType<JavaCompile>() {
+tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
-tasks.withType<Javadoc>() {
+tasks.withType<Javadoc> {
     options.encoding = "UTF-8"
 }
 
@@ -77,7 +87,30 @@ tasks {
     }
 
     shadowJar {
-        archiveFileName.set("${rootProject.name}-${version}.jar".replace("SNAPSHOT", getGitHash))
+        archiveClassifier.set("all")
         relocate("com.zaxxer.hikari", "com.zaxxer.${rootProject.name.lowercase()}.hikari")
+        relocate("org.slf4j", "org.${rootProject.name.lowercase()}.slf4j")
+        exclude("META-INF/maven/com.zaxxer/**")
+        exclude("META-INF/maven/org.slf4j/**")
     }
 }
+
+/*
+publishing {
+    publications.create<MavenPublication>("maven") {
+        from(components["java"])
+    }
+}
+
+tasks.jar {
+    into("META-INF/maven/${project.group}/${project.name}") {
+        tasks.findByName("generatePomFileForMavenPublication")?.let { task ->
+            from(task)
+                rename { it.replace("pom-default.xml", "pom.xml") }
+        }
+        tasks.findByName("generatePomPropertiesFile")?.let {
+            from(it)
+        }
+    }
+}
+*/

@@ -1,11 +1,16 @@
 [plugins]
 shadowPlugin = { id = "com.gradleup.shadow", version.ref = "shadowGradlePlugin" }
+generatePOMPlugin = { id = "ru.vyarus.java-lib", version.ref = "generatePOMGradlePlugin" }
 
 [versions]
 shadowGradlePlugin = "8.3.0"
-paperAPI = "1.20.4-R0.1-SNAPSHOT"
+generatePOMGradlePlugin = "3.0.0"
+bukkitAPI = "1.20.4-R0.1-SNAPSHOT"
+annotations = "24.1.0"
 hikariCP = "5.1.0"
 
 [libraries]
-papermc-paperAPI = { group = "io.papermc.paper", name = "paper-api", version.ref = "paperAPI" }
+papermc-paperapi = { group = "io.papermc.paper", name = "paper-api", version.ref = "bukkitAPI" }
+spigotmc-spigotapi = { group = "org.spigotmc", name = "spigot-api", version.ref = "bukkitAPI" }
+jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version.ref = "annotations" }
 zaxxer-hikariCP = { group = "com.zaxxer", name = "HikariCP", version.ref = "hikariCP" }

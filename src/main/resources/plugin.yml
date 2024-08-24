@@ -1,8 +1,8 @@
-name: DBHandler
-version: '${project.version}'
-main: com.clanjhoo.dbhandler.DBHandler
+name: ${projectName}
+main: ${group}.${name}.${projectName}
+version: ${version}
+website: https://clanjhoo.com
+description: ${description}
 api-version: 1.18
 load: STARTUP
 authors: [ Mowstyl ]
-description: Handles creating tables as well as loading and storing them
-website: https://clanjhoo.com/
