@@ -395,8 +395,7 @@ public class DBObjectManager<T> {
         if (UUID.class.isAssignableFrom(type) && value instanceof String) {
             value = UUID.fromString((String) value);
         }
-        else if (value instanceof Number) {
-            Number v = (Number) value;
+        else if (value instanceof Number v) {
             if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
                 value = v.byteValue();
             }
@@ -485,7 +484,11 @@ public class DBObjectManager<T> {
         if (fd == null) {
             throw new IllegalArgumentException("The field " + field + " is not defined for the table " + tableData.getName());
         }
-        return (Class<? extends Serializable>) fd.field.getType();
+        Class<?> fieldType = fd.field.getType();
+        if (!Serializable.class.isAssignableFrom(fieldType)) {
+            throw new ClassCastException("The field " + field + " is not serializable");
+        }
+        return (Class<? extends Serializable>) fieldType;
     }
 
     /**
@@ -584,7 +587,7 @@ public class DBObjectManager<T> {
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return The item associated with the key, null if it has not been loaded
      */
-    public @Nullable T tryGetDataNow(@NotNull Serializable key, Serializable... keys) {
+    public @Nullable T tryGetDataNow(@NotNull Serializable key, @Nullable Serializable... keys) {
         return tryGetDataNow(concatenateArgs(key, keys));
     }
 
@@ -609,7 +612,7 @@ public class DBObjectManager<T> {
      * @throws SQLException if the selected StorageType uses an SQL database and there was an exception while querying it
      * @throws IOException if the selected StorageType stores data using files and folders and there was an exception while accessing them
      */
-    public boolean exists(@NotNull Serializable key, Serializable... keys) throws IOException, SQLException {
+    public boolean exists(@NotNull Serializable key, @Nullable Serializable... keys) throws IOException, SQLException {
         return exists(concatenateArgs(key, keys));
     }
 
@@ -696,7 +699,7 @@ public class DBObjectManager<T> {
      * @param key The primary key (if the primary key is composite, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
-    public void save(@NotNull Serializable key, Serializable... keys) {
+    public void save(@NotNull Serializable key, @Nullable Serializable... keys) {
         save(concatenateArgs(key, keys));
     }
 
@@ -713,7 +716,7 @@ public class DBObjectManager<T> {
      * @param key The primary key (if the primary key is composite, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
-    public void saveAndRemove(@NotNull Serializable key, Serializable... keys) {
+    public void saveAndRemove(@NotNull Serializable key, @Nullable Serializable... keys) {
         List<Serializable> keyList = concatenateArgs(key, keys);
         this.save(true, keyList);
     }

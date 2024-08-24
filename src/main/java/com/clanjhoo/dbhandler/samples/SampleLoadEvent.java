@@ -39,4 +39,8 @@ public class SampleLoadEvent extends LoadedDataEvent<SampleEntity> {
     public HandlerList getHandlers() {
         return handlers;
     }
+
+    public static HandlerList getHandlerList() {
+        return handlers;
+    }
 }
