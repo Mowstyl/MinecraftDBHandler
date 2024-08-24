@@ -1,5 +1,6 @@
 package com.clanjhoo.dbhandler.data;
 
+import com.clanjhoo.dbhandler.utils.TriFunction;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -10,7 +11,6 @@ import java.sql.*;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,7 +31,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
      * @param username The user of the database the driver will use. Must be passed in the config array of the DBObjectManager constructor
      * @param password The password of the specified user. Must be passed in the config array of the DBObjectManager constructor
      * @param prefix The prefix to add to the name of all tables. Must be passed in the config array of the DBObjectManager constructor
-     * @see DBObjectManager#DBObjectManager(Class clazz, JavaPlugin plugin, StorageType type, BiFunction eventFactory, Predicate saveCondition, int inactiveTime, Object... config)
+     * @see DBObjectManager#DBObjectManager(Class clazz, JavaPlugin plugin, StorageType type, TriFunction eventFactory, Predicate saveCondition, int inactiveTime, Object... config)
      */
     MariaDBDriver(@NotNull JavaPlugin plugin, @NotNull DBObjectManager<T> manager, @NotNull String host, int port, @NotNull String database, @NotNull String username, @NotNull String password, @NotNull String prefix) {
         this.logger = plugin.getLogger();

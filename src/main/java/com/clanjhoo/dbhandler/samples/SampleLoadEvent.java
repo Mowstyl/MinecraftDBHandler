@@ -5,6 +5,9 @@ import org.bukkit.event.HandlerList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.Serializable;
+import java.util.List;
+
 
 /**
  * An example on how to create the event that will be fired when a data load task finishes
@@ -17,8 +20,8 @@ public class SampleLoadEvent extends LoadedDataEvent<SampleEntity> {
     /**
      * Always call super constructor
      */
-    public SampleLoadEvent(@Nullable SampleEntity data, @Nullable Exception exception) {
-        super(data, exception);
+    public SampleLoadEvent(@NotNull List<Serializable> keys, @Nullable SampleEntity data, @Nullable Exception exception) {
+        super(keys, data, exception);
     }
 
     /**

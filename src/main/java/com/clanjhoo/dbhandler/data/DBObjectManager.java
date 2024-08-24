@@ -3,6 +3,7 @@ package com.clanjhoo.dbhandler.data;
 import com.clanjhoo.dbhandler.annotations.*;
 import com.clanjhoo.dbhandler.events.LoadedDataEvent;
 import com.clanjhoo.dbhandler.utils.Pair;
+import com.clanjhoo.dbhandler.utils.TriFunction;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -15,7 +16,6 @@ import java.lang.reflect.*;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -35,7 +35,7 @@ public class DBObjectManager<T> {
     private final Logger logger;
     private final long inactiveTime;
     private final Class<T> meself;
-    private final BiFunction<T, Exception, ? extends LoadedDataEvent<T>> eventFactory;
+    private final TriFunction<List<Serializable>, T, Exception, ? extends LoadedDataEvent<T>> eventFactory;
     private final Predicate<T> saveCondition;
     private TableData tableData;
     private boolean dataInitialized;
@@ -266,7 +266,7 @@ public class DBObjectManager<T> {
     public DBObjectManager(@NotNull Class<T> clazz,
                            @NotNull JavaPlugin plugin,
                            @NotNull StorageType type,
-                           @Nullable BiFunction<T, Exception, ? extends LoadedDataEvent<T>> eventFactory,
+                           @Nullable TriFunction<List<Serializable>, T, Exception, ? extends LoadedDataEvent<T>> eventFactory,
                            @Nullable Predicate<T> saveCondition,
                            int inactiveTime,
                            Object... config) throws IOException {
@@ -488,6 +488,12 @@ public class DBObjectManager<T> {
         return (Class<? extends Serializable>) fd.field.getType();
     }
 
+    /**
+     * Creates a map containing the data of the specified object
+     * @param obj the object to turn into a map
+     * @return the map with the data in the format fieldName -> value
+     * @throws ReflectiveOperationException if there was an error accessing any field
+     */
     protected Map<String, Serializable> toMap(T obj) throws ReflectiveOperationException {
         Map<String, Serializable> data = new HashMap<>();
         for (String name : fieldDataList.keySet()) {
@@ -519,10 +525,12 @@ public class DBObjectManager<T> {
         }
     }
 
+    /**
+     * Stops all load data tasks that are still running
+     */
     public void stopRunningTasks() {
-        for (BukkitTask task : loadTasks.values()) {
-
-        }
+        loadTasks.values().forEach(BukkitTask::cancel);
+        loadTasks.clear();
     }
 
     /**
@@ -540,7 +548,7 @@ public class DBObjectManager<T> {
      * @param keys List of values the primary keys of the queried object has
      * @return The load data bukkit asynchronous task
      */
-    private @NotNull BukkitTask loadData(@NotNull List<Serializable> keys) {
+    public @NotNull BukkitTask loadData(@NotNull List<Serializable> keys) {
         return loadTasks.computeIfAbsent(keys,
                 (k) -> Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                     T data = null;
@@ -552,17 +560,17 @@ public class DBObjectManager<T> {
                         throwable = ex;
                     }
                     loadTasks.remove(k);
-                    LoadedDataEvent<T> event = eventFactory.apply(data, throwable);
+                    LoadedDataEvent<T> event = eventFactory.apply(keys, data, throwable);
                     Bukkit.getPluginManager().callEvent(event);
                 }));
     }
 
     /**
      * Return the object associated with the specified primary key if it's already in memory. Otherwise return null
-     * @param keys The primary key
+     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
      * @return The item associated with the key, null if it has not been loaded
      */
-    private @Nullable T tryGetDataNow(@NotNull List<Serializable> keys) {
+    public @Nullable T tryGetDataNow(@NotNull List<Serializable> keys) {
         return itemData.computeIfAbsent(keys, (k) -> {
             loadTasks.computeIfAbsent(k, this::loadData);
             return null;
@@ -576,8 +584,20 @@ public class DBObjectManager<T> {
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return The item associated with the key, null if it has not been loaded
      */
-    public @Nullable T tryGetDataNow(@NotNull Serializable key, Serializable... keys) throws AssertionError {
+    public @Nullable T tryGetDataNow(@NotNull Serializable key, Serializable... keys) {
         return tryGetDataNow(concatenateArgs(key, keys));
+    }
+
+
+    /**
+     * Return if the specified object is already stored in the database
+     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     * @return Whether the item exists or not
+     * @throws SQLException if the selected StorageType uses an SQL database and there was an exception while querying it
+     * @throws IOException if the selected StorageType stores data using files and folders and there was an exception while accessing them
+     */
+    public boolean exists(@NotNull List<Serializable> keys) throws IOException, SQLException {
+        return driver.contains(tableData.getName(), keys.toArray(new Serializable[0]));
     }
 
 
@@ -590,7 +610,7 @@ public class DBObjectManager<T> {
      * @throws IOException if the selected StorageType stores data using files and folders and there was an exception while accessing them
      */
     public boolean exists(@NotNull Serializable key, Serializable... keys) throws IOException, SQLException {
-        return driver.contains(tableData.getName(), concatenateArgs(key, keys).toArray(new Serializable[0]));
+        return exists(concatenateArgs(key, keys));
     }
 
 
@@ -671,26 +691,21 @@ public class DBObjectManager<T> {
         save(delete, Arrays.asList(keys));
     }
 
-    private void save(@NotNull List<Serializable> keys) {
-        this.save(false, keys);
-    }
-
-    /**
-     * Save the data of the object associated with the specified Primary Key and remove it from memory if the save process was successful
-     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
-     */
-    private void saveAndRemove(@NotNull List<Serializable> keys) {
-        this.save(true, keys);
-    }
-
     /**
      * Save the data of the object associated with the specified Primary Key
      * @param key The primary key (if the primary key is composite, this is the first alphabetically by their field names)
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      */
     public void save(@NotNull Serializable key, Serializable... keys) {
-        List<Serializable> keyList = concatenateArgs(key, keys);
-        this.save(false, keyList);
+        save(concatenateArgs(key, keys));
+    }
+
+    /**
+     * Save the data of the object associated with the specified Primary Key
+     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     */
+    public void save(@NotNull List<Serializable> keys) {
+        this.save(false, keys);
     }
 
     /**
@@ -701,6 +716,14 @@ public class DBObjectManager<T> {
     public void saveAndRemove(@NotNull Serializable key, Serializable... keys) {
         List<Serializable> keyList = concatenateArgs(key, keys);
         this.save(true, keyList);
+    }
+
+    /**
+     * Save the data of the object associated with the specified Primary Key and remove it from memory if the save process was successful
+     * @param keys The primary key (if there is more than one field set as the primary key, their values have to be sorted alphabetically by their field names)
+     */
+    public void saveAndRemove(@NotNull List<Serializable> keys) {
+        this.save(true, keys);
     }
 
     private void saveFromMap(boolean async, @NotNull Map<List<Serializable>, T> dict, boolean remove) {
