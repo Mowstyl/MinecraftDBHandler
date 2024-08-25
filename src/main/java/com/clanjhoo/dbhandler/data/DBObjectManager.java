@@ -542,8 +542,26 @@ public class DBObjectManager<T> {
      * @param keys The rest of the primary key in case it's a composite one (sorted alphabetically by their field names)
      * @return The load data bukkit asynchronous task
      */
-    public @NotNull BukkitTask loadData(@NotNull Serializable key, @Nullable Serializable... keys) {
+    @NotNull
+    public BukkitTask loadData(@NotNull Serializable key, @Nullable Serializable... keys) {
         return loadData(concatenateArgs(key, keys));
+    }
+
+    @NotNull
+    private BukkitTask loadDataLambda(@NotNull List<Serializable> keys) {
+        return Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            T data = null;
+            Exception throwable = null;
+            try {
+                data = driver.loadData(tableData.getName(), keys.toArray(new Serializable[0]));
+            }
+            catch (Exception ex) {
+                throwable = ex;
+            }
+            loadTasks.remove(keys);
+            LoadedDataEvent<T> event = eventFactory.apply(keys, data, throwable);
+            Bukkit.getPluginManager().callEvent(event);
+        });
     }
 
     /**
@@ -551,21 +569,9 @@ public class DBObjectManager<T> {
      * @param keys List of values the primary keys of the queried object has
      * @return The load data bukkit asynchronous task
      */
-    public @NotNull BukkitTask loadData(@NotNull List<Serializable> keys) {
-        return loadTasks.computeIfAbsent(keys,
-                (k) -> Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                    T data = null;
-                    Exception throwable = null;
-                    try {
-                        data = driver.loadData(tableData.getName(), k.toArray(new Serializable[0]));
-                    }
-                    catch (Exception ex) {
-                        throwable = ex;
-                    }
-                    loadTasks.remove(k);
-                    LoadedDataEvent<T> event = eventFactory.apply(keys, data, throwable);
-                    Bukkit.getPluginManager().callEvent(event);
-                }));
+    @NotNull
+    public BukkitTask loadData(@NotNull List<Serializable> keys) {
+        return loadTasks.computeIfAbsent(keys, this::loadDataLambda);
     }
 
     /**
@@ -575,7 +581,7 @@ public class DBObjectManager<T> {
      */
     public @Nullable T tryGetDataNow(@NotNull List<Serializable> keys) {
         return itemData.computeIfAbsent(keys, (k) -> {
-            loadTasks.computeIfAbsent(k, this::loadData);
+            loadTasks.computeIfAbsent(k, this::loadDataLambda);
             return null;
         });
     }
