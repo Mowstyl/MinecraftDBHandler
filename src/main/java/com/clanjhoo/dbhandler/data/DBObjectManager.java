@@ -479,16 +479,16 @@ public class DBObjectManager<T> {
      * @return the class of the field
      * @throws ClassCastException if the field is not of a serializable class
      */
-    protected Class<? extends Serializable> getType(String field) {
+    protected Class<?> getType(String field) {
         FieldData fd = fieldDataList.get(field);
         if (fd == null) {
             throw new IllegalArgumentException("The field " + field + " is not defined for the table " + tableData.getName());
         }
         Class<?> fieldType = fd.field.getType();
-        if (!Serializable.class.isAssignableFrom(fieldType)) {
-            throw new ClassCastException("The field " + field + " is not serializable");
+        if (!fieldType.isPrimitive() && !Serializable.class.isAssignableFrom(fieldType)) {
+            throw new ClassCastException("The field " + field + " is not serializable. Class: " + fieldType.getName());
         }
-        return (Class<? extends Serializable>) fieldType;
+        return fieldType;
     }
 
     /**
@@ -554,11 +554,11 @@ public class DBObjectManager<T> {
             Exception throwable = null;
             try {
                 data = driver.loadData(tableData.getName(), keys.toArray(new Serializable[0]));
+                itemData.put(keys, data);
             }
             catch (Exception ex) {
                 throwable = ex;
             }
-            itemData.put(keys, data);
             loadTasks.remove(keys);
             LoadedDataEvent<T> event = eventFactory.apply(keys, data, throwable);
             Bukkit.getPluginManager().callEvent(event);

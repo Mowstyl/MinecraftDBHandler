@@ -195,7 +195,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
         String[] pKeyNames = manager.getTableData().getPrimaryKeys().toArray(new String[0]);
         String[] pKeyConds = new String[pKeyNames.length];
         for (int i = 0; i < pKeyNames.length; i++) {
-            Class<? extends Serializable> clazz = manager.getType(pKeyNames[i]);
+            Class<?> clazz = manager.getType(pKeyNames[i]);
             String compOp = "=";
             if (UUID.class.isAssignableFrom(clazz) || String.class.isAssignableFrom(clazz)) {
                 compOp = "LIKE";
@@ -241,7 +241,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
                 if (rs != null && rs.next()) {
                     for (String field : manager.getTableData().getFields()) {
                         Serializable item;
-                        Class<? extends Serializable> type = manager.getType(field);
+                        Class<?> type = manager.getType(field);
                         if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
                             item = rs.getByte(field);
                         }
