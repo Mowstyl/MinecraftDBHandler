@@ -16,7 +16,7 @@ val getGitHash: String by lazy {
 }
 
 group = "com.clanjhoo"
-version = "4.0.0-SNAPSHOT"//.replace("SNAPSHOT", getGitHash)
+version = "4.0.0"//.replace("SNAPSHOT", getGitHash)
 description = "Framework for spigot that handles creating and accessing databases"
 
 ext.set("projectName", gradle.extra["projectName"].toString())
@@ -57,7 +57,7 @@ repositories {
         }
     }
     mavenCentral()
-    mavenLocal()
+    // mavenLocal()
 }
 
 dependencies {
