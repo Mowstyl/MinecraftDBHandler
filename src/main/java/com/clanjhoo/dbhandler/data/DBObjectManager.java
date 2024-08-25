@@ -558,6 +558,7 @@ public class DBObjectManager<T> {
             catch (Exception ex) {
                 throwable = ex;
             }
+            itemData.put(keys, data);
             loadTasks.remove(keys);
             LoadedDataEvent<T> event = eventFactory.apply(keys, data, throwable);
             Bukkit.getPluginManager().callEvent(event);
