@@ -16,7 +16,7 @@ val getGitHash: String by lazy {
 }
 
 group = "com.clanjhoo"
-version = "4.0.2"//.replace("SNAPSHOT", getGitHash)
+version = "4.0.3"//.replace("SNAPSHOT", getGitHash)
 description = "Framework for spigot that handles creating and accessing databases"
 
 ext.set("projectName", gradle.extra["projectName"].toString())
@@ -26,7 +26,7 @@ maven.pom {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(11)
         vendor = JvmVendorSpec.ORACLE
     }
 }

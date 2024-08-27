@@ -47,9 +47,9 @@ public class SampleEntity implements Serializable, Comparable<SampleEntity> {
     @Override
     @Contract(value = "null -> false", pure = true)
     public boolean equals(Object other) {
-        if (!(other instanceof SampleEntity entity))
+        if (!(other instanceof SampleEntity))
             return false;
-        return id.equals(entity.id);
+        return id.equals(((SampleEntity) other).id);
     }
 
     @Override

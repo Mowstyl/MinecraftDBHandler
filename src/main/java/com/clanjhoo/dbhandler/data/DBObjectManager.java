@@ -255,7 +255,7 @@ public class DBObjectManager<T> {
      * @param plugin The plugin that has created the object
      * @param type Type of the storage driver
      * @param eventFactory A supplier that returns the event that will be fired whenever the data has been successfully loaded
-     * @param saveCondition A predicate that determines if an item has to be stored in the database or deleted. null -> save all
+     * @param saveCondition A predicate that determines if an item has to be stored in the database or deleted. null means save all
      * @param inactiveTime Time in milliseconds to remove inactive items from the manager. A negative number means never inactive
      * @param config Any config options needed by the selected storage driver type
      * @see JSONDriver#JSONDriver(JavaPlugin plugin, DBObjectManager manager, String storageFolderName)
@@ -395,44 +395,44 @@ public class DBObjectManager<T> {
         if (UUID.class.isAssignableFrom(type) && value instanceof String) {
             value = UUID.fromString((String) value);
         }
-        else if (value instanceof Number v) {
-            if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
-                value = v.byteValue();
-            }
-            else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
-                value = v.shortValue();
-            }
-            else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
-                value = v.intValue();
-            }
-            else if (long.class.equals(type) || Long.class.isAssignableFrom(type)) {
-                value = v.longValue();
-            }
-            else if (float.class.equals(type) || Float.class.isAssignableFrom(type)) {
-                value = v.floatValue();
-            }
-            else if (double.class.equals(type) || Double.class.isAssignableFrom(type)) {
-                value = v.doubleValue();
-            }
-        }
         else if (type.isPrimitive()) {
-            if (byte.class.equals(type) || Byte.class.isAssignableFrom(type)) {
+            if (byte.class.equals(type)) {
                 value = (byte) value;
             }
-            else if (short.class.equals(type) || Short.class.isAssignableFrom(type)) {
+            else if (short.class.equals(type)) {
                 value = (short) value;
             }
-            else if (int.class.equals(type) || Integer.class.isAssignableFrom(type)) {
+            else if (int.class.equals(type)) {
                 value = (int) value;
             }
-            else if (long.class.equals(type) || Long.class.isAssignableFrom(type)) {
+            else if (long.class.equals(type)) {
                 value = (long) value;
             }
-            else if (float.class.equals(type) || Float.class.isAssignableFrom(type)) {
+            else if (float.class.equals(type)) {
                 value = (float) value;
             }
-            else if (double.class.equals(type) || Double.class.isAssignableFrom(type)) {
+            else if (double.class.equals(type)) {
                 value = (double) value;
+            }
+        }
+        else if (value instanceof Number) {
+            if (Byte.class.isAssignableFrom(type)) {
+                value = ((Number) value).byteValue();
+            }
+            else if (Short.class.isAssignableFrom(type)) {
+                value = ((Number) value).shortValue();
+            }
+            else if (Integer.class.isAssignableFrom(type)) {
+                value = ((Number) value).intValue();
+            }
+            else if (Long.class.isAssignableFrom(type)) {
+                value = ((Number) value).longValue();
+            }
+            else if (Float.class.isAssignableFrom(type)) {
+                value = ((Number) value).floatValue();
+            }
+            else if (Double.class.isAssignableFrom(type)) {
+                value = ((Number) value).doubleValue();
             }
         }
 
@@ -494,7 +494,7 @@ public class DBObjectManager<T> {
     /**
      * Creates a map containing the data of the specified object
      * @param obj the object to turn into a map
-     * @return the map with the data in the format fieldName -> value
+     * @return the map with the data in the format fieldName -- value
      * @throws ReflectiveOperationException if there was an error accessing any field
      */
     protected Map<String, Serializable> toMap(T obj) throws ReflectiveOperationException {
@@ -649,8 +649,8 @@ public class DBObjectManager<T> {
         }
         try {
             if (saveCondition != null) {
-                List<T> toDelete = items.stream().filter((item) -> !saveCondition.test(item)).toList();
-                items = items.stream().filter(saveCondition).toList();
+                List<T> toDelete = items.stream().filter((item) -> !saveCondition.test(item)).collect(Collectors.toList());
+                items = items.stream().filter(saveCondition).collect(Collectors.toList());
                 driver.deleteData(tableData.getName(), toDelete);
             }
             Map<List<Serializable>, Boolean> results = driver.saveData(tableData.getName(), items);
@@ -748,10 +748,17 @@ public class DBObjectManager<T> {
                 operation = SaveOperation.SAVE_ALL;
         }
         switch (operation) {
-            case SAVE_ALL -> saveFromMap(async, itemData, false);
-            case SAVE_ALL_AND_REMOVE_ALL -> saveFromMap(async, itemData, true);
-            case SAVE_AND_REMOVE_INACTIVE -> saveAndRemoveInactive(async, true);
-            case SAVE_ALL_AND_REMOVE_INACTIVE -> saveAndRemoveInactive(async, false);
+            case SAVE_ALL:
+                saveFromMap(async, itemData, false);
+                break;
+            case SAVE_ALL_AND_REMOVE_ALL:
+                saveFromMap(async, itemData, true);
+                break;
+            case SAVE_AND_REMOVE_INACTIVE:
+                saveAndRemoveInactive(async, true);
+                break;
+            case SAVE_ALL_AND_REMOVE_INACTIVE:
+                saveAndRemoveInactive(async, false);
         }
     }
 
@@ -780,7 +787,7 @@ public class DBObjectManager<T> {
             List<List<Serializable>> toSave = lastChecked.entrySet().stream()
                     .filter((e) -> now - e.getValue() >= inactiveTime)
                     .map(Map.Entry::getKey)
-                    .toList();
+                    .collect(Collectors.toList());
             save(async, true, toSave);
         }
         else {

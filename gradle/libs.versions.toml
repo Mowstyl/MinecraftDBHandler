@@ -5,7 +5,7 @@ generatePOMPlugin = { id = "ru.vyarus.java-lib", version.ref = "generatePOMGradl
 [versions]
 shadowGradlePlugin = "8.3.0"
 generatePOMGradlePlugin = "3.0.0"
-bukkitAPI = "1.20.4-R0.1-SNAPSHOT"
+bukkitAPI = "1.13-R0.1-SNAPSHOT"
 annotations = "24.1.0"
 hikariCP = "5.1.0"
 
