@@ -2,7 +2,7 @@ package com.clanjhoo.dbhandler.data;
 
 import com.clanjhoo.dbhandler.annotations.*;
 import com.clanjhoo.dbhandler.events.LoadedDataEvent;
-import com.clanjhoo.dbhandler.utils.Pair;
+import com.clanjhoo.dbhandler.utils.Tuple;
 import com.clanjhoo.dbhandler.utils.TriFunction;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * Instances of this class handle all input / output from the specified database
  * @param <T> the type of the objects that will be handled by this manager
  */
-public class DBObjectManager<T> {
+public final class DBObjectManager<T> {
     private final Map<List<Serializable>, Long> lastChecked = new ConcurrentHashMap<>();
     private final Map<List<Serializable>, T> itemData = new ConcurrentHashMap<>();
     private final Map<List<Serializable>, BukkitTask> loadTasks = new ConcurrentHashMap<>();
@@ -40,7 +40,7 @@ public class DBObjectManager<T> {
     private TableData tableData;
     private boolean dataInitialized;
     private Map<String, FieldData> fieldDataList;
-    private Map<String, Pair<String, String>> foreigns;
+    private Map<String, Tuple<String, String>> foreigns;
 
 
     private static Object stringToSerializable(Class<?> type, String value) {
@@ -72,25 +72,25 @@ public class DBObjectManager<T> {
     private static Object primitiveFromString(Class<?> primitive, String value) {
         Object val;
         if (byte.class.equals(primitive)) {
-            val = Byte.valueOf(value).byteValue();
+            val = Byte.parseByte(value);
         }
         else if (short.class.equals(primitive)) {
-            val = Short.valueOf(value).shortValue();
+            val = Short.parseShort(value);
         }
         else if (int.class.equals(primitive)) {
-            val = Integer.valueOf(value).intValue();
+            val = Integer.parseInt(value);
         }
         else if (long.class.equals(primitive)) {
-            val = Long.valueOf(value).longValue();
+            val = Long.parseLong(value);
         }
         else if (float.class.equals(primitive)) {
-            val = Float.valueOf(value).floatValue();
+            val = Float.parseFloat(value);
         }
         else if (double.class.equals(primitive)) {
-            val = Double.valueOf(value).doubleValue();
+            val = Double.parseDouble(value);
         }
         else if (boolean.class.equals(primitive)) {
-            val = Boolean.valueOf(value).booleanValue();
+            val = Boolean.parseBoolean(value);
         }
         else {
             val = value.charAt(0);
@@ -227,7 +227,7 @@ public class DBObjectManager<T> {
                         fd -> fd.name,
                         fd -> {
                             ForeignKey fkAnn = fd.field.getAnnotation(ForeignKey.class);
-                            return new Pair<>(fkAnn.name(), fkAnn.table());
+                            return new Tuple<>(fkAnn.name(), fkAnn.table());
                         }
                 ));
     }
@@ -239,13 +239,13 @@ public class DBObjectManager<T> {
         if (dataInitialized) {
             return;
         }
-        for (String name : foreigns.keySet()) {
-            Pair<String, String> name_table = foreigns.get(name);
+        for (Map.Entry<String, Tuple<String, String>> entry : foreigns.entrySet()) {
+            Tuple<String, String> name_table = entry.getValue();
             TableData other = TableData.findTableData(name_table.getSecond());
             if (other == null) {
                 throw new IllegalArgumentException("Table " + name_table.getSecond() + " is not defined");
             }
-            tableData.addForeignKey(name, other, name_table.getFirst());
+            tableData.addForeignKey(entry.getKey(), other, name_table.getFirst());
         }
     }
 
@@ -353,9 +353,9 @@ public class DBObjectManager<T> {
                 }
             }
         }
-        for (String name : fieldDataList.keySet()) {
-            FieldData fd = fieldDataList.get(name);
-            Serializable value = data.get(name);
+        for (Map.Entry<String, FieldData> entry : fieldDataList.entrySet()) {
+            FieldData fd = entry.getValue();
+            Serializable value = data.get(entry.getKey());
             if (value != null) {
                 setValue(def, fd.field, value);
             }
@@ -394,26 +394,6 @@ public class DBObjectManager<T> {
         Class<?> type = field.getType();
         if (UUID.class.isAssignableFrom(type) && value instanceof String) {
             value = UUID.fromString((String) value);
-        }
-        else if (type.isPrimitive()) {
-            if (byte.class.equals(type)) {
-                value = (byte) value;
-            }
-            else if (short.class.equals(type)) {
-                value = (short) value;
-            }
-            else if (int.class.equals(type)) {
-                value = (int) value;
-            }
-            else if (long.class.equals(type)) {
-                value = (long) value;
-            }
-            else if (float.class.equals(type)) {
-                value = (float) value;
-            }
-            else if (double.class.equals(type)) {
-                value = (double) value;
-            }
         }
         else if (value instanceof Number) {
             if (Byte.class.isAssignableFrom(type)) {
@@ -499,9 +479,9 @@ public class DBObjectManager<T> {
      */
     protected Map<String, Serializable> toMap(T obj) throws ReflectiveOperationException {
         Map<String, Serializable> data = new HashMap<>();
-        for (String name : fieldDataList.keySet()) {
-            FieldData fd = fieldDataList.get(name);
-            data.put(name, (Serializable) this.getValue(obj, fd.field));
+        for (Map.Entry<String, FieldData> entry : fieldDataList.entrySet()) {
+            FieldData fd = entry.getValue();
+            data.put(entry.getKey(), (Serializable) this.getValue(obj, fd.field));
         }
         return data;
     }
@@ -655,10 +635,10 @@ public class DBObjectManager<T> {
             }
             Map<List<Serializable>, Boolean> results = driver.saveData(tableData.getName(), items);
             if (delete) {
-                for (List<Serializable> result : results.keySet()) {
-                    if (results.get(result)) {
-                        itemData.remove(result);
-                        lastChecked.remove(result);
+                for (Map.Entry<List<Serializable>, Boolean> entry : results.entrySet()) {
+                    if (entry.getValue()) {
+                        itemData.remove(entry.getKey());
+                        lastChecked.remove(entry.getKey());
                     }
                     else {
                         logger.log(Level.SEVERE, "Could not save an item on table " + tableData.getName() + "!");
@@ -682,7 +662,12 @@ public class DBObjectManager<T> {
                 T item = tryGetDataNow(key);
                 items.add(item);
             }
-            catch (Exception ignore) {}
+            catch (Exception ex) {
+                logger.log(Level.WARNING, "Error while preparing item for saving it. Key: "
+                        + key.stream()
+                                .map(Object::toString)
+                                .collect(Collectors.joining(", ")));
+            }
         }
         if (async) {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> rawSave(delete, items));

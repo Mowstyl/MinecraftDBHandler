@@ -48,10 +48,8 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     // DO NOT CALL DIRECTLY
-    private PreparedStatement prepareStatement(@NotNull Connection conn, final String query, Object... vars) {
-        try {
-            PreparedStatement ps = conn.prepareStatement(query);
-
+    private Object prepareStatement(@NotNull Connection conn, Function<PreparedStatement, Object> function, final String query, Object... vars) {
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
             for (int i = 0; i < vars.length; i++) {
                 if (vars[i] instanceof UUID) {
                     vars[i] = vars[i].toString();
@@ -82,7 +80,7 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
                 }
             }
 
-            return ps;
+            return function.apply(ps);
         } catch (SQLException e) {
             logger.log(Level.WARNING, "MySQL error");
             e.printStackTrace();
@@ -92,17 +90,20 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     private int update(@NotNull Connection connection, final String query, final Object... vars) throws SQLException {
-        SQLException ex;
-        try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
-            assert ps != null;
-            return ps.executeUpdate();
-        } catch (SQLException e) {
-            if (e.getErrorCode() == 1060) {
-                return -1;
+        Object result = prepareStatement(connection, (ps) -> {
+            try {
+                return ps.executeUpdate();
+            } catch (SQLException ex) {
+                if (ex.getErrorCode() == 1060) {
+                    return -1;
+                }
+                return ex;
             }
-            ex = e;
+        }, query, vars);
+        if (result instanceof SQLException) {
+            throw (SQLException) result;
         }
-        throw ex;
+        return (int) result;
     }
 
     private int update(final String query, final Object... vars) throws SQLException {
@@ -125,18 +126,21 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     private boolean execute(@NotNull Connection connection, final String query, final Object... vars) throws SQLException {
-        SQLException ex;
-        try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
-            assert ps != null;
-            ps.execute();
-            return true;
-        } catch (SQLException e) {
-            if (e.getErrorCode() == 1060) {
-                return false;
+        Object result = prepareStatement(connection, (ps) -> {
+            try {
+                ps.execute();
+                return true;
+            } catch (SQLException ex) {
+                if (ex.getErrorCode() == 1060) {
+                    return false;
+                }
+                return ex;
             }
-            ex = e;
+        }, query, vars);
+        if (result instanceof SQLException) {
+            throw (SQLException) result;
         }
-        throw ex;
+        return (boolean) result;
     }
 
     private boolean execute(final String query, final Object... vars) throws SQLException {
@@ -159,17 +163,17 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     private <E> E query(@NotNull Connection connection, final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
-        E result;
-
-        try (PreparedStatement ps = prepareStatement(connection, query, vars)) {
-            assert ps != null;
-
+        Object result = prepareStatement(connection, (ps) -> {
             try (ResultSet rs = ps.executeQuery()) {
-                result = function.apply(rs);
+                return function.apply(rs);
+            } catch (SQLException ex) {
+                return ex;
             }
+        }, query, vars);
+        if (result instanceof SQLException) {
+            throw (SQLException) result;
         }
-
-        return result;
+        return (E) result;
     }
 
     private <E> E query(final String query, Function<ResultSet, E> function, final Object... vars) throws SQLException {
@@ -319,11 +323,12 @@ class MariaDBDriver<T> implements DatabaseDriver<T> {
     }
 
     private boolean saveData(Connection connection, @NotNull String table, @NotNull T item) throws ReflectiveOperationException {
-        String sqlQuery = "INSERT INTO `" + prefix + table + "` (`";
         String[] fields = manager.getTableData().getFields().toArray(new String[0]);
-        sqlQuery += String.join("`, `", fields) + "`) VALUES (";
-        sqlQuery += String.join(", ", Collections.nCopies(fields.length, "?")) + ") ON DUPLICATE KEY UPDATE `";
-        sqlQuery += String.join("` = ?, `", fields) + "` = ?;";
+        final String sqlQuery = "INSERT INTO `" + prefix + table
+                + "` (`" + String.join("`, `", fields) + "`) VALUES ("
+                + String.join(", ", Collections.nCopies(fields.length, "?"))
+                + ") ON DUPLICATE KEY UPDATE `" +
+                String.join("` = ?, `", fields) + "` = ?;";
         Object[] fieldData = new Serializable[fields.length*2];
         for (int i = 0; i < fields.length; i++) {
             Serializable data = manager.getValue(item, fields[i]);

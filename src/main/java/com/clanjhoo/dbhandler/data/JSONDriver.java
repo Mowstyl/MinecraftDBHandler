@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -76,10 +77,12 @@ class JSONDriver<T> implements DatabaseDriver<T> {
         Arrays.sort(pKeyNames);
         Map<String, Serializable> data;
         if (dataFile.exists()) {
-            try (FileReader reader = new FileReader(dataFile)) {
+            try (InputStream in = new FileInputStream(dataFile);
+                 Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+                 BufferedReader br = new BufferedReader(reader)) {
                 Gson gson = new Gson();
                 Type mapType = new TypeToken<Map<String, Object>>(){}.getType();
-                data = gson.fromJson(reader, mapType);
+                data = gson.fromJson(br, mapType);
             }
         }
         else {
@@ -142,9 +145,11 @@ class JSONDriver<T> implements DatabaseDriver<T> {
         File dataFile = new File(storage, table + "/" + id + ".json");
         Gson gson = new Gson();
         String serializedData = gson.toJson(manager.toMap(item));
-        try (FileWriter writer = new FileWriter(dataFile)) {
-            writer.write(serializedData);
-            writer.flush();
+        try (OutputStream out = new FileOutputStream(dataFile);
+             Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+             BufferedWriter bw = new BufferedWriter(writer)) {
+            bw.write(serializedData);
+            bw.flush();
         } catch (IOException e) {
             logger.log(Level.WARNING, "Raw JSON store data error on table " + table);
             e.printStackTrace();

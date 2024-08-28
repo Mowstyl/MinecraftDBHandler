@@ -34,11 +34,8 @@ public abstract class LoadedDataEvent<T> extends Event {
         if (data != null) {
             result = LoadResult.SUCCESS;
         }
-        else if (exception != null) {
-            result = LoadResult.ERROR;
-        }
         else {
-            throw new IllegalArgumentException("No data loaded and no error thrown");
+            result = LoadResult.ERROR;
         }
     }
 
@@ -48,7 +45,7 @@ public abstract class LoadedDataEvent<T> extends Event {
      */
     @NotNull
     public final List<Serializable> getKeys() {
-        return keys;
+        return List.copyOf(keys);
     }
 
     /**

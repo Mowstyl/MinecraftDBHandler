@@ -18,14 +18,9 @@ import java.util.logging.Level;
  * Sample plugin using DBHandler
  */
 public final class DBHandler extends JavaPlugin {
-    private static DBHandler instance;
+
     private DBObjectManager<SampleEntity> myEntityManager;
 
-    @Override
-    public void onLoad() {
-        // Plugin startup logic
-        instance = this;
-    }
 
     @Override
     public void onEnable() {
@@ -37,8 +32,8 @@ public final class DBHandler extends JavaPlugin {
                     this,
                     StorageType.JSON,
                     SampleLoadEvent::new,
-                    // Only store items in the DB if they aren't the defailt ones
-                    (se) -> se.bolognesa == 3.2 && se.ravioliRavioli == 0,
+                    // Only store items in the DB if they aren't the default ones
+                    (se) -> Math.abs(se.bolognesa - 3.2) < .0000001 && Math.abs(se.ravioliRavioli) < .0000001,
                     // 5 minutes inactive time
                     5 * 60 * 1000,
                     "store");
@@ -59,6 +54,7 @@ public final class DBHandler extends JavaPlugin {
         //
     }
 
+
     @Override
     public void onDisable() {
         // Plugin shutdown logic
@@ -67,6 +63,7 @@ public final class DBHandler extends JavaPlugin {
             myEntityManager.saveAllSync(SaveOperation.SAVE_ALL);
         }
     }
+
 
     /**
      * Returns the sample entity manager that handles the data
@@ -77,11 +74,12 @@ public final class DBHandler extends JavaPlugin {
         return myEntityManager;
     }
 
+
     /**
      * Returns the one and only instance of the DBHandler that Bukkit has created
      * @return a DBHandler instance
      */
     public static DBHandler getInstance() {
-        return instance;
+        return (DBHandler) Bukkit.getPluginManager().getPlugin("DBHandler");
     }
 }

@@ -19,6 +19,9 @@ public class SampleLoadEvent extends LoadedDataEvent<SampleEntity> {
 
     /**
      * Always call super constructor
+     * @param keys the key associated with the loaded item
+     * @param data the loaded item
+     * @param exception the exception thrown in case the item could not be loaded
      */
     public SampleLoadEvent(@NotNull List<Serializable> keys, @Nullable SampleEntity data, @Nullable Exception exception) {
         super(keys, data, exception);

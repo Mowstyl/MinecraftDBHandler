@@ -4,6 +4,7 @@ plugins {
     `java-library`
     alias(libs.plugins.shadowPlugin)
     alias(libs.plugins.generatePOMPlugin)
+    id("com.github.spotbugs") version "6.0.20"
 }
 
 val getGitHash: String by lazy {
@@ -92,6 +93,14 @@ tasks {
         relocate("org.slf4j", "org.${rootProject.name.lowercase()}.slf4j")
         exclude("META-INF/maven/com.zaxxer/**")
         exclude("META-INF/maven/org.slf4j/**")
+    }
+
+    spotbugsMain {
+        reports.create("html") {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs.html")
+            setStylesheet("fancy-hist.xsl")
+        }
     }
 }
 

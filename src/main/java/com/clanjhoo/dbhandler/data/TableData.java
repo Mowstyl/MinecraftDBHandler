@@ -1,14 +1,13 @@
 package com.clanjhoo.dbhandler.data;
 
-import com.clanjhoo.dbhandler.utils.Pair;
+import com.clanjhoo.dbhandler.utils.Tuple;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 
 /**
@@ -21,7 +20,7 @@ public class TableData {
     private Set<String> primaryKeys;
     private final List<Set<String>> uniqueKeys;
     private final Map<String, FieldData> data;
-    private final Map<String, Pair<String, TableData>> foreignKeys;
+    private final Map<String, Tuple<String, TableData>> foreignKeys;
 
 
     /**
@@ -69,15 +68,15 @@ public class TableData {
         }
         FieldData otherData = otherTable.data.get(otherField);
         data.put(thisField, otherData);
-        foreignKeys.put(thisField, new Pair<>(otherField, otherTable));
+        foreignKeys.put(thisField, new Tuple<>(otherField, otherTable));
     }
 
     /**
      * Returns a map that maps fields with their associated field in another table
      * @return the map containing the foreign keys
      */
-    public Map<String, Pair<String, TableData>> getForeignKeys() {
-        return foreignKeys;
+    public Map<String, Tuple<String, TableData>> getForeignKeys() {
+        return Map.copyOf(foreignKeys);
     }
 
     /**
@@ -108,7 +107,7 @@ public class TableData {
      * @return the name of the primary key fields
      */
     public Set<String> getPrimaryKeys() {
-        return primaryKeys;
+        return Set.copyOf(primaryKeys);
     }
 
     /**
@@ -124,7 +123,7 @@ public class TableData {
      * @return the list of unique sets of fields
      */
     public List<Set<String>> getUniques() {
-        return uniqueKeys;
+        return uniqueKeys.stream().map(HashSet::new).collect(Collectors.toList());
     }
 
     private Set<String> getFieldSet(String... rawFields) {
@@ -171,9 +170,9 @@ public class TableData {
         for (int i = 0; i < uniqueKeys.size(); i++) {
             createString.append(", CONSTRAINT UC_").append(name).append(i).append(" UNIQUE (").append(String.join(",", uniqueKeys.get(i))).append(")");
         }
-        for (Map.Entry<String, Pair<String, TableData>> entry : foreignKeys.entrySet()) {
+        for (Map.Entry<String, Tuple<String, TableData>> entry : foreignKeys.entrySet()) {
             String localField = entry.getKey();
-            Pair<String, TableData> foreignField = entry.getValue();
+            Tuple<String, TableData> foreignField = entry.getValue();
             createString.append(", CONSTRAINT FK_").append(name).append(localField).append(" FOREIGN KEY (").append(localField).append(")");
             createString.append(" REFERENCES").append(foreignField.getSecond().name).append("(").append(foreignField.getFirst()).append(")");
         }

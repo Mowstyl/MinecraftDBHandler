@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Entity(table = "thebath")
 public class SampleEntity implements Serializable, Comparable<SampleEntity> {
     // static fields will be ignored
+    private static final long serialVersionUID = 6470L;
     public static float flotacion = 2;
     public static final Set<SampleEntity> entities = ConcurrentHashMap.newKeySet();
 
