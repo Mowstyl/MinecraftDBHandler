@@ -1,23 +1,16 @@
-import java.io.ByteArrayOutputStream
+import com.github.spotbugs.snom.Confidence
+import com.github.spotbugs.snom.Effort
 
 plugins {
     `java-library`
     alias(libs.plugins.shadowPlugin)
     alias(libs.plugins.generatePOMPlugin)
-    id("com.github.spotbugs") version "6.0.20"
+    alias(libs.plugins.spotBugsPlugin)
 }
 
-val getGitHash: String by lazy {
-    val stdout = ByteArrayOutputStream()
-    rootProject.exec {
-        commandLine("git", "rev-parse", "--short", "HEAD")
-        standardOutput = stdout
-    }
-    stdout.toString().trim()
-}
 
 group = "com.clanjhoo"
-version = "4.0.3"//.replace("SNAPSHOT", getGitHash)
+version = "4.0.3"
 description = "Framework for spigot that handles creating and accessing databases"
 
 ext.set("projectName", gradle.extra["projectName"].toString())
@@ -98,28 +91,16 @@ tasks {
     spotbugsMain {
         reports.create("html") {
             required = true
-            outputLocation = file("$buildDir/reports/spotbugs.html")
+            outputLocation = file("${layout.buildDirectory.get()}/reports/spotbugs.html")
             setStylesheet("fancy-hist.xsl")
         }
     }
 }
 
-/*
-publishing {
-    publications.create<MavenPublication>("maven") {
-        from(components["java"])
-    }
+spotbugs {
+    ignoreFailures = false
+    showStackTraces = true
+    showProgress = true
+    effort = Effort.DEFAULT
+    reportLevel = Confidence.DEFAULT
 }
-
-tasks.jar {
-    into("META-INF/maven/${project.group}/${project.name}") {
-        tasks.findByName("generatePomFileForMavenPublication")?.let { task ->
-            from(task)
-                rename { it.replace("pom-default.xml", "pom.xml") }
-        }
-        tasks.findByName("generatePomPropertiesFile")?.let {
-            from(it)
-        }
-    }
-}
-*/
