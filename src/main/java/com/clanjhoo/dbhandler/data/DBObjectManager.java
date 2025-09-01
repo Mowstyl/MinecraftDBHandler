@@ -396,24 +396,18 @@ public final class DBObjectManager<T> {
             value = UUID.fromString((String) value);
         }
         else if (value instanceof Number) {
-            if (Byte.class.isAssignableFrom(type)) {
+            if (byte.class.isAssignableFrom(type) || Byte.class.isAssignableFrom(type))
                 value = ((Number) value).byteValue();
-            }
-            else if (Short.class.isAssignableFrom(type)) {
+            else if (short.class.isAssignableFrom(type) || Short.class.isAssignableFrom(type))
                 value = ((Number) value).shortValue();
-            }
-            else if (Integer.class.isAssignableFrom(type)) {
+            else if (int.class.isAssignableFrom(type) || Integer.class.isAssignableFrom(type))
                 value = ((Number) value).intValue();
-            }
-            else if (Long.class.isAssignableFrom(type)) {
+            else if (long.class.isAssignableFrom(type) || Long.class.isAssignableFrom(type))
                 value = ((Number) value).longValue();
-            }
-            else if (Float.class.isAssignableFrom(type)) {
+            else if (float.class.isAssignableFrom(type) || Float.class.isAssignableFrom(type))
                 value = ((Number) value).floatValue();
-            }
-            else if (Double.class.isAssignableFrom(type)) {
+            else if (double.class.isAssignableFrom(type) || Double.class.isAssignableFrom(type))
                 value = ((Number) value).doubleValue();
-            }
         }
 
         try {

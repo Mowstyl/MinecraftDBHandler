@@ -10,7 +10,7 @@ plugins {
 
 
 group = "com.clanjhoo"
-version = "4.0.3"
+version = "4.0.4"
 description = "Framework for spigot that handles creating and accessing databases"
 
 ext.set("projectName", gradle.extra["projectName"].toString())
@@ -65,15 +65,15 @@ dependencies {
     }
 }
 
-tasks.withType<JavaCompile> {
-    options.encoding = "UTF-8"
-}
-
-tasks.withType<Javadoc> {
-    options.encoding = "UTF-8"
-}
-
 tasks {
+    compileJava {
+        options.encoding = Charsets.UTF_8.name()
+    }
+
+    javadoc {
+        options.encoding = Charsets.UTF_8.name()
+    }
+
     processResources {
         filesMatching("**/plugin.yml") {
             expand( project.properties )
@@ -81,7 +81,7 @@ tasks {
     }
 
     shadowJar {
-        archiveClassifier.set("all")
+        // archiveClassifier.set("all")
         relocate("com.zaxxer.hikari", "com.zaxxer.${rootProject.name.lowercase()}.hikari")
         relocate("org.slf4j", "org.${rootProject.name.lowercase()}.slf4j")
         exclude("META-INF/maven/com.zaxxer/**")
